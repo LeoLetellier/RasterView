@@ -44,14 +44,28 @@ impl ViewMode {
                     .default_x_bounds(0.0, rw as f64)
                     .default_y_bounds(0.0, rh as f64)
                     .show(ui, |plot_ui| {
+                        // Bounds in pixel coordinates
                         new_bounds = Some(plot_ui.plot_bounds());
 
                         if let Some(handle) = ci.handle() {
                             let [xmin, xmax, ymin, ymax] = handle.offset_bounds();
+                            // Center in pixel coordinates
+                            // let cx = (xmin + xmax) as f64 / 2.0;
+                            // let cy = (ymin + ymax) as f64 / 2.0;
+                            let (_, rh) = raster_size; // already available in scope
                             let cx = (xmin + xmax) as f64 / 2.0;
-                            let cy = (ymin + ymax) as f64 / 2.0;
+                            let cy = rh as f64 - (ymin + ymax) as f64 / 2.0;
+                            // Width and height in pixel coordinates
                             let w = (xmax - xmin) as f32;
                             let h = (ymax - ymin) as f32;
+                            log::debug!(
+                                "draw: extent {:?} center ({}, {}) size ({}, {})",
+                                handle.extent,
+                                cx,
+                                cy,
+                                w,
+                                h
+                            );
                             plot_ui.image(PlotImage::new(
                                 "raster",
                                 handle.texture_handle.id(),
@@ -63,10 +77,18 @@ impl ViewMode {
 
                 // 3. Check if a new load is needed
                 if let Some(bounds) = new_bounds {
+                    // With these bounds we should need the texture extent
                     let opts = ReadOptions::from_plot_bounds(1, bounds, available, raster_size);
-                    if ci.needs_reload(&opts) {
-                        let worker: ColorInterpretationWorker = ci.to_worker_with_opts(opts);
-                        let _ = texture_worker.request_load(worker);
+                    // If not out of screen
+                    if let Some(o) = opts {
+                        // And if need a new texture
+                        if ci.needs_reload(&o) {
+                            // Ask the worker a new texture
+                            log::debug!("Ask worker new texture");
+                            dbg!(&o);
+                            let worker: ColorInterpretationWorker = ci.to_worker_with_opts(o);
+                            let _ = texture_worker.request_load(worker);
+                        }
                     }
                 }
             }
@@ -78,6 +100,7 @@ impl ViewMode {
 
     /// Poll for new textures and update handles
     pub fn try_update_texture(&mut self, texture_worker: &mut TextureWorker) {
+        log::debug!("try update texture");
         match self {
             ViewMode::Single(ci) | ViewMode::SingleWeb(ci) => {
                 ci.try_update_texture(texture_worker);
@@ -155,20 +178,48 @@ impl ColorInterpretation {
 
     /// True if the current handle doesn't cover the desired opts
     fn needs_reload(&self, opts: &ReadOptions) -> bool {
+        log::debug!("check if need reload of texture");
         let Some(handle) = self.handle() else {
+            log::debug!("needs_reload: no handle yet");
             return true;
         };
+        log::debug!(
+            "handle  extent: {:?} ds: {}",
+            handle.extent,
+            handle.downsampling
+        );
+        log::debug!(
+            "desired extent: {:?} ds: {}",
+            opts.extent,
+            opts.downsampling
+        );
+        // If change of zoom needed
+        if handle.downsampling != opts.downsampling {
+            log::debug!(
+                "needs_reload: downsampling changed {} -> {}",
+                handle.downsampling,
+                opts.downsampling
+            );
+            return true;
+        }
+
+        // Bounds of current texture
         let [xmin, xmax, ymin, ymax] = handle.offset_bounds();
+        // Bounds needed by the hypothetic new texture
         let [dxmin, dxmax, dymin, dymax] = opts.extent;
 
-        let dx = (xmin as isize - dxmin as isize).unsigned_abs();
-        let dy = (ymin as isize - dymin as isize).unsigned_abs();
-        let span_x = dxmax - dxmin;
-        let span_y = dymax - dymin;
+        // Use desired window size as normalizer — stable across zoom levels
+        let span_x = (dxmax - dxmin) as f64;
+        let span_y = (dymax - dymin) as f64;
 
-        handle.downsampling != opts.downsampling
-                || dx > span_x / 5        // >20% drift
-                || dy > span_y / 5
+        let pan_threshold = 0.1;
+        // Isize downcasting to avoid overflow
+        let pan_update_needed = ((xmin as isize - dxmin as isize).abs() as f64 / span_x)
+            > pan_threshold
+            || ((xmax as isize - dxmax as isize).abs() as f64 / span_x) > pan_threshold
+            || ((ymin as isize - dymin as isize).abs() as f64 / span_y) > pan_threshold
+            || ((ymax as isize - dymax as isize).abs() as f64 / span_y) > pan_threshold;
+        pan_update_needed
     }
 
     /// Clone self into a worker with updated read options
@@ -291,10 +342,11 @@ impl ColorInterpretationWorker {
         let raster_band = dataset.rasterband(*band)?;
         let window = (extent[0] as isize, extent[2] as isize);
         let window_size = (extent[1] - extent[0], extent[3] - extent[2]);
+        // max at 1 to prevent zero dimension
         let buffer_size = if *downsampling > 0 {
             (
-                window_size.0.div_euclid(2 * downsampling),
-                window_size.1.div_euclid(2 * downsampling),
+                window_size.0.div_euclid(2 * downsampling).max(1),
+                window_size.1.div_euclid(2 * downsampling).max(1),
             )
         } else {
             window_size.clone()
@@ -336,7 +388,7 @@ impl ColorInterpretationWorker {
         let array2 = self.read_array2(&opts)?;
         let texture = self.array2_to_texture(array2, ctx)?;
         Ok(RasterViewHandle::new(
-            [opts.extent[0], opts.extent[2]],
+            opts.extent,
             opts.downsampling,
             texture,
         ))
@@ -362,7 +414,7 @@ impl ColorInterpretationWorker {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct ReadOptions {
     band: usize,
     extent: [usize; 4],
@@ -384,51 +436,99 @@ impl ReadOptions {
         bounds: PlotBounds,
         screen_size: egui::Vec2,
         raster_size: (usize, usize),
-    ) -> Self {
+    ) -> Option<Self> {
         let (rw, rh) = raster_size;
+        // Span is plot bounds size in pixel coordinates
         let span_x = bounds.max()[0] - bounds.min()[0];
         let span_y = bounds.max()[1] - bounds.min()[1];
-        let pad_x = span_x * 0.1;
-        let pad_y = span_y * 0.1;
-        let xmin = (bounds.min()[0] - pad_x).max(0.0) as usize;
-        let xmax = ((bounds.max()[0] + pad_x) as usize).min(rw);
-        let ymin = (bounds.min()[1] - pad_y).max(0.0) as usize;
-        let ymax = ((bounds.max()[1] + pad_y) as usize).min(rh);
-        let px_per_screen = ((xmax - xmin) as f64 / screen_size.x as f64)
-            .max((ymax - ymin) as f64 / screen_size.y as f64);
-        let downsampling = if px_per_screen > 1.0 {
-            (px_per_screen.log2().floor() as usize).clamp(0, 6)
-        } else {
-            0
-        };
+        // Pad it with 15% margin
+        let pad_x = span_x * 0.15;
+        let pad_y = span_y * 0.15;
 
-        Self {
-            band,
-            extent: [xmin, xmax, ymin, ymax],
-            downsampling,
+        // Determine full intersection betwen padded bounds and raster extent in pixel coordinates
+        // Dont get lower than 0 for lower bounds
+        let xmin = (bounds.min()[0] - pad_x).max(0.0) as usize;
+        // let ymin = (bounds.min()[1] - pad_y).max(0.0) as usize;
+        // Dont get higher than raster size for higher bounds
+        let xmax = ((bounds.max()[0] + pad_x) as usize).min(rw);
+        // let ymax = ((bounds.max()[1] + pad_y) as usize).min(rh);
+
+        let ymin = (rh as f64 - bounds.max()[1] - pad_y).max(0.0) as usize;
+        let ymax = ((rh as f64 - bounds.min()[1] + pad_y) as usize).min(rh);
+
+        // Guard
+        if xmin >= xmax || ymin >= ymax {
+            return None;
+        }
+
+        // usize casting already make them positive but anyway...
+        let out_of_screen = xmin > rw || xmax < 0 || ymin > rh || ymax < 0;
+
+        if !out_of_screen {
+            // Plot coordinates actually needed
+            let visible_raster_pixels = ((xmax - xmin) as f64, (ymax - ymin) as f64);
+            // Screen pixel is the actual number of pixels for display in screen cxoordinates
+            let screen_pixels = (screen_size.x as f64, screen_size.y as f64);
+            // Ratio is
+            // * > 1 if more pixel in raster to show than in screen so need downsampling
+            // * < 1 if less pixel in raster than on screen so show full res
+            let visible_pixel_ratio = (
+                visible_raster_pixels.0 / screen_pixels.0,
+                visible_raster_pixels.1 / screen_pixels.1,
+            );
+
+            // Check the worst case ratio, so the max value between x and y
+            let px_per_screen = visible_pixel_ratio.0.max(visible_pixel_ratio.1);
+
+            // Determine the downsampling to apply (px / (2 * downsampling))
+            let downsampling = if px_per_screen > 1.0 {
+                (px_per_screen.log2().floor() as usize).clamp(0, 6)
+            } else {
+                // No downsampling
+                0
+            };
+
+            log::debug!(
+                "Plot bounds is {} {} {} {}",
+                bounds.min()[0],
+                bounds.min()[1],
+                bounds.max()[0],
+                bounds.max()[1]
+            );
+
+            log::debug!("Ask for extent {} {} {} {}", xmin, ymin, xmax, ymax);
+
+            Some(Self {
+                band,
+                extent: [xmin, xmax, ymin, ymax],
+                downsampling,
+            })
+        } else {
+            None
         }
     }
 }
 
 pub struct RasterViewHandle {
-    pub offset: [usize; 2],
+    /// Extent in pixel coordinates
+    pub extent: [usize; 4],
+    /// Downsampling factor requested
     pub downsampling: usize,
+    /// Egui Texture
     pub texture_handle: TextureHandle,
 }
 
 impl RasterViewHandle {
-    fn new(offset: [usize; 2], downsampling: usize, texture_handle: TextureHandle) -> Self {
+    fn new(extent: [usize; 4], downsampling: usize, texture_handle: TextureHandle) -> Self {
         Self {
-            offset,
+            extent,
             downsampling,
             texture_handle,
         }
     }
 
-    /// [xmin, xmax, ymin, ymax] derived from offset and texture size
+    /// Gives extent in pixel coordinates
     pub fn offset_bounds(&self) -> [usize; 4] {
-        let [ox, oy] = self.offset;
-        let [w, h] = self.texture_handle.size();
-        [ox, ox + w, oy, oy + h]
+        self.extent
     }
 }
