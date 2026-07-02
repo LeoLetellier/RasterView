@@ -111,24 +111,27 @@ impl DatasetProperties {
         if let Some(gt) = self.geotransform {
             prop_section(
                 ui,
-                None,
-                &[[
-                    "Geotransform".to_string(),
-                    format!(
-                        "x_ul:{} x_res:{} x_rot:{} y_ul:{} y_rot:{} y_res:{}",
-                        gt[0], gt[1], gt[2], gt[3], gt[4], gt[5]
-                    ),
-                ]],
+                Some("Geotransform"),
+                &[
+                    ["x ul".to_string(), gt[0].to_string()],
+                    ["x res".to_string(), gt[1].to_string()],
+                    ["x rot".to_string(), gt[2].to_string()],
+                    ["y ul".to_string(), gt[3].to_string()],
+                    ["x rot".to_string(), gt[4].to_string()],
+                    ["x res".to_string(), gt[5].to_string()],
+                ],
             );
         }
         if let Some(bb) = self.bbox {
             prop_section(
                 ui,
-                None,
-                &[[
-                    "Bbox".to_string(),
-                    format!("x({:.1}:{:.1}) y({:.1}:{:.1})", bb[0], bb[1], bb[2], bb[3]),
-                ]],
+                Some("BBox"),
+                &[
+                    ["xmin".to_string(), bb[0].to_string()],
+                    ["xmax".to_string(), bb[1].to_string()],
+                    ["ymin".to_string(), bb[2].to_string()],
+                    ["ymax".to_string(), bb[3].to_string()],
+                ],
             );
         }
     }

@@ -3,7 +3,7 @@
 mod app;
 mod raster;
 mod texture_thread;
-mod view_mode;
+mod viewers;
 
 fn main() -> eframe::Result {
     env_logger::init();

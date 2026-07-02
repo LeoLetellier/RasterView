@@ -5,131 +5,23 @@ use egui::{TextureHandle, Ui, vec2};
 use egui_plot::PlotBounds;
 use egui_plot::{Plot, PlotImage, PlotPoint};
 use ndarray::Array2;
+use rayon::prelude::*;
 use std::path::{Path, PathBuf};
 
+mod coords;
+mod ui;
+
 /// Image viewer composition
-pub enum ViewMode {
-    /// Display one image
-    Single(ColorInterpretation),
-    /// Display one image using Walkers
-    SingleWeb(ColorInterpretation),
-    /// Display two images blending with an alpha value
-    Alpha2(ColorInterpretation, ColorInterpretation),
-    /// Display two images transitionning with a slider
-    Slide2(ColorInterpretation, ColorInterpretation),
-    // /// Display two images side by side
-    // Synchro2(ColorInterpretation, ColorInterpretation),
-}
-
-impl ViewMode {
-    /// All central panel viewer goes in this one
-    pub fn ui(&mut self, ui: &mut Ui, texture_worker: &mut TextureWorker) {
-        match self {
-            ViewMode::Single(ci) => {
-                // 1. Poll for new texture
-                ci.try_update_texture(texture_worker);
-
-                // 2. Draw plot, capture bounds
-                let raster_size = ci.raster_size();
-                let (rw, rh) = raster_size;
-                let available = ui.available_size();
-                let mut new_bounds: Option<PlotBounds> = None;
-
-                Plot::new("main_plot")
-                    .data_aspect(1.0)
-                    .pan_pointer_button(egui::PointerButton::Primary)
-                    .boxed_zoom_pointer_button(egui::PointerButton::Secondary)
-                    .allow_scroll(false)
-                    .allow_zoom(true)
-                    .default_x_bounds(0.0, rw as f64)
-                    .default_y_bounds(0.0, rh as f64)
-                    .show(ui, |plot_ui| {
-                        // Bounds in pixel coordinates
-                        new_bounds = Some(plot_ui.plot_bounds());
-
-                        if let Some(handle) = ci.handle() {
-                            let [xmin, xmax, ymin, ymax] = handle.offset_bounds();
-                            // Center in pixel coordinates
-                            // let cx = (xmin + xmax) as f64 / 2.0;
-                            // let cy = (ymin + ymax) as f64 / 2.0;
-                            let (_, rh) = raster_size; // already available in scope
-                            let cx = (xmin + xmax) as f64 / 2.0;
-                            let cy = rh as f64 - (ymin + ymax) as f64 / 2.0;
-                            // Width and height in pixel coordinates
-                            let w = (xmax - xmin) as f32;
-                            let h = (ymax - ymin) as f32;
-                            log::debug!(
-                                "draw: extent {:?} center ({}, {}) size ({}, {})",
-                                handle.extent,
-                                cx,
-                                cy,
-                                w,
-                                h
-                            );
-                            plot_ui.image(PlotImage::new(
-                                "raster",
-                                handle.texture_handle.id(),
-                                PlotPoint::new(cx, cy),
-                                vec2(w, h),
-                            ));
-                        }
-                    });
-
-                // 3. Check if a new load is needed
-                if let Some(bounds) = new_bounds {
-                    // With these bounds we should need the texture extent
-                    let opts = ReadOptions::from_plot_bounds(1, bounds, available, raster_size);
-                    // If not out of screen
-                    if let Some(o) = opts {
-                        // And if need a new texture
-                        if ci.needs_reload(&o) {
-                            // Ask the worker a new texture
-                            log::debug!("Ask worker new texture");
-                            dbg!(&o);
-                            let worker: ColorInterpretationWorker = ci.to_worker_with_opts(o);
-                            let _ = texture_worker.request_load(worker);
-                        }
-                    }
-                }
-            }
-            _ => {
-                ui.label("not done yet");
-            }
-        }
-    }
-
-    /// Poll for new textures and update handles
-    pub fn try_update_texture(&mut self, texture_worker: &mut TextureWorker) {
-        log::debug!("try update texture");
-        match self {
-            ViewMode::Single(ci) | ViewMode::SingleWeb(ci) => {
-                ci.try_update_texture(texture_worker);
-            }
-            ViewMode::Alpha2(ci1, ci2) | ViewMode::Slide2(ci1, ci2) => {
-                ci1.try_update_texture(texture_worker);
-                ci2.try_update_texture(texture_worker);
-            }
-        }
-    }
-
-    pub fn raster(&self) -> Option<&RasterHandler> {
-        match self {
-            ViewMode::Single(ci) | ViewMode::SingleWeb(ci) => ci.raster(),
-            ViewMode::Alpha2(ci, _) | ViewMode::Slide2(ci, _) => ci.raster(),
-        }
-    }
-}
-
-/// How an image should be rendered
+/// /// How an image should be rendered
 ///
 /// * Information about the current raster
 /// * Parameters to create the view
 /// * Current texture
-pub enum ColorInterpretation {
+pub enum ViewMode {
     /// One band in greys or with palette color
     Panchromatic(RasterHandler, PanchromaticParams, Option<RasterViewHandle>),
-    /// Three bands into RGB
-    Color(RasterHandler, ColorParams, Option<RasterViewHandle>),
+    /// Three bands into RGB + one for alpha
+    RGBA(RasterHandler, ColorParams, Option<RasterViewHandle>),
     /// Ratio A / B
     Ratio2(RasterHandler, Ratio2Params, Option<RasterViewHandle>),
     /// Ratio (A - B) / (A + B)
@@ -138,11 +30,80 @@ pub enum ColorInterpretation {
     Cpx(RasterHandler, CpxParams, Option<RasterViewHandle>),
 }
 
-impl ColorInterpretation {
+impl ViewMode {
+    // /// All central panel viewer goes in this one
+    // pub fn ui(&mut self, ui: &mut Ui, texture_worker: &mut TextureWorker) {
+    //     // 1. Poll for new texture
+    //     self.try_update_texture(texture_worker);
+
+    //     // 2. Draw plot, capture bounds
+    //     let raster_size = self.raster_size();
+    //     let (rw, rh) = raster_size;
+    //     let available = ui.available_size();
+    //     let mut new_bounds: Option<PlotBounds> = None;
+
+    //     Plot::new("main_plot")
+    //         .data_aspect(1.0)
+    //         .pan_pointer_button(egui::PointerButton::Primary)
+    //         .boxed_zoom_pointer_button(egui::PointerButton::Secondary)
+    //         .allow_scroll(false)
+    //         .allow_zoom(true)
+    //         .default_x_bounds(0.0, rw as f64)
+    //         .default_y_bounds(0.0, rh as f64)
+    //         .show(ui, |plot_ui| {
+    //             // Bounds in pixel coordinates
+    //             new_bounds = Some(plot_ui.plot_bounds());
+
+    //             if let Some(handle) = self.handle() {
+    //                 let [xmin, xmax, ymin, ymax] = handle.offset_bounds();
+    //                 // Center in pixel coordinates
+    //                 // let cx = (xmin + xmax) as f64 / 2.0;
+    //                 // let cy = (ymin + ymax) as f64 / 2.0;
+    //                 let (_, rh) = raster_size; // already available in scope
+    //                 let cx = (xmin + xmax) as f64 / 2.0;
+    //                 let cy = rh as f64 - (ymin + ymax) as f64 / 2.0;
+    //                 // Width and height in pixel coordinates
+    //                 let w = (xmax - xmin) as f32;
+    //                 let h = (ymax - ymin) as f32;
+    //                 log::debug!(
+    //                     "draw: extent {:?} center ({}, {}) size ({}, {})",
+    //                     handle.extent,
+    //                     cx,
+    //                     cy,
+    //                     w,
+    //                     h
+    //                 );
+    //                 plot_ui.image(PlotImage::new(
+    //                     "raster",
+    //                     handle.texture_handle.id(),
+    //                     PlotPoint::new(cx, cy),
+    //                     vec2(w, h),
+    //                 ));
+    //             }
+    //         });
+
+    //     // 3. Check if a new load is needed
+    //     if let Some(bounds) = new_bounds {
+    //         // With these bounds we should need the texture extent
+    //         let opts = ReadOptions::from_plot_bounds(1, bounds, available, raster_size);
+    //         // If not out of screen
+    //         if let Some(o) = opts {
+    //             // And if need a new texture
+    //             if self.needs_reload(&o) {
+    //                 // Ask the worker a new texture
+    //                 log::debug!("Ask worker new texture");
+    //                 dbg!(&o);
+    //                 let worker: ViewModeWorker = self.to_worker_with_opts(o);
+    //                 let _ = texture_worker.request_load(worker);
+    //             }
+    //         }
+    //     }
+    // }
+
     fn handle(&self) -> &Option<RasterViewHandle> {
         match self {
             Self::Panchromatic(_, _, h)
-            | Self::Color(_, _, h)
+            | Self::RGBA(_, _, h)
             | Self::Ratio2(_, _, h)
             | Self::Ratio4(_, _, h)
             | Self::Cpx(_, _, h) => h,
@@ -152,7 +113,7 @@ impl ColorInterpretation {
     fn handle_mut(&mut self) -> &mut Option<RasterViewHandle> {
         match self {
             Self::Panchromatic(_, _, h)
-            | Self::Color(_, _, h)
+            | Self::RGBA(_, _, h)
             | Self::Ratio2(_, _, h)
             | Self::Ratio4(_, _, h)
             | Self::Cpx(_, _, h) => h,
@@ -169,7 +130,7 @@ impl ColorInterpretation {
     fn raster_size(&self) -> (usize, usize) {
         match self {
             Self::Panchromatic(raster, _, _)
-            | Self::Color(raster, _, _)
+            | Self::RGBA(raster, _, _)
             | Self::Ratio2(raster, _, _)
             | Self::Ratio4(raster, _, _)
             | Self::Cpx(raster, _, _) => raster.raster_size(),
@@ -223,9 +184,9 @@ impl ColorInterpretation {
     }
 
     /// Clone self into a worker with updated read options
-    fn to_worker_with_opts(&self, opts: ReadOptions) -> ColorInterpretationWorker {
+    fn to_worker_with_opts(&self, opts: ReadOptions) -> ViewModeWorker {
         match self {
-            Self::Panchromatic(raster, _, _) => ColorInterpretationWorker::Panchromatic(
+            Self::Panchromatic(raster, _, _) => ViewModeWorker::Panchromatic(
                 raster.path().to_path_buf(),
                 PanchromaticParams {
                     read_opts: Some(opts),
@@ -239,7 +200,7 @@ impl ColorInterpretation {
     pub fn raster(&self) -> Option<&RasterHandler> {
         match self {
             Self::Panchromatic(r, _, _)
-            | Self::Color(r, _, _)
+            | Self::RGBA(r, _, _)
             | Self::Ratio2(r, _, _)
             | Self::Ratio4(r, _, _)
             | Self::Cpx(r, _, _) => Some(r),
@@ -256,35 +217,8 @@ pub(super) struct Ratio2Params {}
 pub(super) struct Ratio4Params {}
 pub(super) struct CpxParams {}
 
-/// Worker producing the textures for the mage display
-pub enum ViewModeWorker {
-    Single(ColorInterpretationWorker),
-    /// Display one image using Walkers
-    SingleWeb(ColorInterpretationWorker),
-    /// Display two images blending with an alpha value
-    Alpha2(ColorInterpretationWorker, ColorInterpretationWorker),
-    /// Display two images transitionning with a slider
-    Slide2(ColorInterpretationWorker, ColorInterpretationWorker),
-    // /// Display two images side by side
-    // Synchro2(ColorInterpretationWorker, ColorInterpretationWorker),
-}
-
-impl From<ViewMode> for ViewModeWorker {
-    fn from(value: ViewMode) -> Self {
-        match value {
-            ViewMode::Single(color) => ViewModeWorker::Single(color.into()),
-            ViewMode::SingleWeb(color) => ViewModeWorker::SingleWeb(color.into()),
-            ViewMode::Alpha2(color, color2) => ViewModeWorker::Alpha2(color.into(), color2.into()),
-            ViewMode::Slide2(color, color2) => ViewModeWorker::Slide2(color.into(), color2.into()),
-            // ViewMode::Synchro2(color, color2) => {
-            //     ViewModeWorker::Synchro2(color.into(), color2.into())
-            // }
-        }
-    }
-}
-
 /// Worker handling the texture generation from file reading
-pub enum ColorInterpretationWorker {
+pub enum ViewModeWorker {
     /// One band in greys or with palette color
     Panchromatic(PathBuf, PanchromaticParams),
     /// Three bands into RGB
@@ -297,29 +231,29 @@ pub enum ColorInterpretationWorker {
     Cpx(PathBuf, CpxParams),
 }
 
-impl From<ColorInterpretation> for ColorInterpretationWorker {
-    fn from(value: ColorInterpretation) -> Self {
+impl From<ViewMode> for ViewModeWorker {
+    fn from(value: ViewMode) -> Self {
         match value {
-            ColorInterpretation::Panchromatic(raster, color, _) => {
-                ColorInterpretationWorker::Panchromatic(raster.path().to_path_buf(), color)
+            ViewMode::Panchromatic(raster, color, _) => {
+                ViewModeWorker::Panchromatic(raster.path().to_path_buf(), color)
             }
-            ColorInterpretation::Color(raster, color, _) => {
-                ColorInterpretationWorker::Color(raster.path().to_path_buf(), color)
+            ViewMode::RGBA(raster, color, _) => {
+                ViewModeWorker::Color(raster.path().to_path_buf(), color)
             }
-            ColorInterpretation::Ratio2(raster, color, _) => {
-                ColorInterpretationWorker::Ratio2(raster.path().to_path_buf(), color)
+            ViewMode::Ratio2(raster, color, _) => {
+                ViewModeWorker::Ratio2(raster.path().to_path_buf(), color)
             }
-            ColorInterpretation::Ratio4(raster, color, _) => {
-                ColorInterpretationWorker::Ratio4(raster.path().to_path_buf(), color)
+            ViewMode::Ratio4(raster, color, _) => {
+                ViewModeWorker::Ratio4(raster.path().to_path_buf(), color)
             }
-            ColorInterpretation::Cpx(raster, color, _) => {
-                ColorInterpretationWorker::Cpx(raster.path().to_path_buf(), color)
+            ViewMode::Cpx(raster, color, _) => {
+                ViewModeWorker::Cpx(raster.path().to_path_buf(), color)
             }
         }
     }
 }
 
-impl ColorInterpretationWorker {
+impl ViewModeWorker {
     /// Get the raster path
     pub fn path(&self) -> &Path {
         match self {
@@ -365,16 +299,24 @@ impl ColorInterpretationWorker {
     /// Transform the array2 into an egui-ready texture
     fn array2_to_texture(&self, arr: Array2<f32>, ctx: &egui::Context) -> Result<TextureHandle> {
         let (rows, cols) = arr.dim();
-        let min = arr.iter().cloned().fold(f32::INFINITY, f32::min);
-        let max = arr.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+
+        // parallel min/max
+        let min = arr.par_iter().cloned().reduce(|| f32::INFINITY, f32::min);
+        let max = arr
+            .par_iter()
+            .cloned()
+            .reduce(|| f32::NEG_INFINITY, f32::max);
         let range = (max - min).max(f32::EPSILON);
+
+        // parallel pixel building — each element produces 4 bytes
         let pixels: Vec<u8> = arr
-            .iter()
+            .par_iter()
             .flat_map(|&v| {
                 let g = ((v - min) / range * 255.0) as u8;
                 [g, g, g, 255]
             })
             .collect();
+
         Ok(ctx.load_texture(
             "raster",
             ColorImage::from_rgba_unmultiplied([cols, rows], &pixels),
