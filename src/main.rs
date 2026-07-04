@@ -2,7 +2,7 @@
 
 mod app;
 mod raster;
-mod texture_thread;
+// mod texture_thread;
 mod viewers;
 
 fn main() -> eframe::Result {

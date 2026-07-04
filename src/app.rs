@@ -1,43 +1,45 @@
 use crate::raster::RasterHandler;
-use crate::texture_thread::TextureWorker;
-use crate::viewers::{PanchromaticParams, ViewMode};
+// use crate::texture_thread::TextureWorker;
+use crate::viewers::Viewer;
 use anyhow::{Result, bail};
 use std::path::PathBuf;
 
 pub struct RasterView {
     raster_path: Option<PathBuf>,
-    view_mode: Option<ViewMode>,
-    texture_worker: TextureWorker,
+    viewer: Viewer,
+    // texture_worker: TextureWorker,
+    left_panel_collapsed: bool,
 }
 
 impl RasterView {
     pub fn new(ctx: egui::Context) -> Self {
-        let texture_worker = TextureWorker::new(ctx);
+        // let texture_worker = TextureWorker::new(ctx);
         Self {
             raster_path: Default::default(),
-            view_mode: Default::default(),
-            texture_worker,
+            viewer: Default::default(),
+            // texture_worker,
+            left_panel_collapsed: false,
         }
     }
 
     fn update_datasets(&mut self) -> Result<()> {
         if let Some(path) = &self.raster_path {
             let raster_handler = RasterHandler::new(path)?;
-            self.view_mode = Some(ViewMode::Panchromatic(
-                raster_handler,
-                PanchromaticParams::default(),
-                None,
-            ));
+            // self.view_mode = Some(ViewMode::Panchromatic(
+            //     raster_handler,
+            //     PanchromaticParams::default(),
+            //     None,
+            // ));
             return Ok(());
         }
         bail!("no dataset to update");
     }
 
-    /// Delete the current view in case load a file non supported
-    /// In that case should reset the view
-    fn clear_datasets(&mut self) {
-        self.view_mode = None;
-    }
+    // /// Delete the current view in case load a file non supported
+    // /// In that case should reset the view
+    // fn clear_datasets(&mut self) {
+    //     self.view_mode = None;
+    // }
 }
 
 impl eframe::App for RasterView {
@@ -53,6 +55,15 @@ impl eframe::App for RasterView {
 
         egui::Panel::top("top panel").show_inside(ui, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
+                let left_panel_symbol = if self.left_panel_collapsed {
+                    "⏶"
+                } else {
+                    "⏷"
+                };
+                if ui.button(left_panel_symbol).clicked() {
+                    self.left_panel_collapsed = !self.left_panel_collapsed;
+                }
+
                 let button_file_name = if let Some(path) = &self.raster_path {
                     format!(
                         "File: {}",
@@ -69,7 +80,7 @@ impl eframe::App for RasterView {
                     .clicked()
                 {
                     self.raster_path = rfd::FileDialog::new().pick_file();
-                    self.clear_datasets();
+                    // self.clear_datasets();
                     self.update_datasets();
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -85,11 +96,26 @@ impl eframe::App for RasterView {
             });
         });
 
-        egui::Panel::bottom("bottom panel").show_inside(ui, |_ui| {});
+        egui::Panel::bottom("bottom panel").show_inside(ui, |ui| {
+            if cfg!(debug_assertions) {
+                let ms = ui.ctx().input(|i| i.unstable_dt * 1000.0);
 
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    egui::warn_if_debug_build(ui);
+                    ui.label(format!("{ms:.1} ms"));
+                });
+            }
+        });
+
+        let is_open = !self.left_panel_collapsed;
         egui::Panel::left("left panel")
-            .size_range(100.0..=ui.ctx().content_rect().width() * 0.33)
-            .show_inside(ui, |ui| {
+            .resizable(is_open)
+            .size_range(if is_open {
+                100.0..=ui.ctx().content_rect().width() * 0.33
+            } else {
+                0.0..=0.0
+            })
+            .show_animated_inside(ui, is_open, |ui| {
                 ui.heading("Raster Information");
                 ui.separator();
 
@@ -127,8 +153,8 @@ impl eframe::App for RasterView {
                     }
                 });
 
-                if let Some(view_mode) = &self.view_mode {
-                    if let Some(raster) = view_mode.raster() {
+                {
+                    if let Some(raster) = self.viewer.raster_handler.as_mut() {
                         egui::ScrollArea::vertical().show(ui, |ui| {
                             ui.heading("Dataset");
                             ui.separator();
@@ -145,12 +171,11 @@ impl eframe::App for RasterView {
                 }
             });
 
-        egui::Panel::right("right panel").show_inside(ui, |_ui| {});
+        // egui::Panel::right("right panel").show_inside(ui, |_ui| {});
 
+        let viewer = &mut self.viewer;
         egui::CentralPanel::default().show_inside(ui, |ui| {
-            if let Some(view) = &mut self.view_mode {
-                view.ui(ui, &mut self.texture_worker);
-            }
+            viewer.ui(ui);
         });
     }
 }

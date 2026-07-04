@@ -4,6 +4,7 @@ use gdal::Dataset;
 use gdal::raster::RasterBand;
 use std::path::{Path, PathBuf};
 
+#[derive(Debug)]
 pub(crate) struct RasterHandler {
     pub path: PathBuf,
     pub dataset: gdal::Dataset,
@@ -54,6 +55,7 @@ impl RasterHandler {
     }
 }
 
+#[derive(Debug)]
 pub struct DatasetProperties {
     driver: String,
     size: (usize, usize),
@@ -137,6 +139,7 @@ impl DatasetProperties {
     }
 }
 
+#[derive(Debug)]
 pub struct BandProperties {
     dtype: String,
     unit: Option<String>,
