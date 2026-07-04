@@ -1,18 +1,163 @@
 use crate::app::prop_section;
+use crate::viewers::coords::{Bbox, PixelBox};
+use crate::viewers::tiler::{SeriesPayload, TileId, TilePayload};
 use anyhow::Result;
 use gdal::Dataset;
 use gdal::raster::RasterBand;
+use gdal::raster::ResampleAlg;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug)]
 pub(crate) struct RasterHandler {
     pub path: PathBuf,
     pub dataset: gdal::Dataset,
+    // Transform the two below into impl direct instead of fully typed in memory
     pub dataset_properties: DatasetProperties,
     pub band_properties: Vec<BandProperties>,
 }
 
 impl RasterHandler {
+    pub fn load_tile(&self, id: &TileId, raster_bbox: &PixelBox, bands: &[usize]) -> TilePayload {
+        let x_off = raster_bbox.xmin() as isize;
+        let y_off = raster_bbox.ymin() as isize;
+        let native_w = (raster_bbox.xmax() - raster_bbox.xmin()) as usize;
+        let native_h = (raster_bbox.ymax() - raster_bbox.ymin()) as usize;
+
+        // id.downscaling est maintenant garanti puissance de 2 (1, 2, 4, 8...)
+        let out_w = (native_w / id.downscaling).max(1);
+        let out_h = (native_h / id.downscaling).max(1);
+
+        let mut values = Vec::with_capacity(out_w * out_h * bands.len());
+
+        for &band_idx in bands {
+            let band = self
+                .dataset
+                .rasterband(band_idx + 1)
+                .expect("band index out of range");
+
+            let buffer = self.read_band_at_scale(
+                &band,
+                x_off,
+                y_off,
+                native_w,
+                native_h,
+                out_w,
+                out_h,
+                id.downscaling,
+            );
+
+            values.extend_from_slice(&buffer.data());
+        }
+
+        TilePayload {
+            values,
+            width: out_w as u32,
+            height: out_h as u32,
+            bands: bands.len() as u8,
+        }
+    }
+
+    fn read_band_at_scale(
+        &self,
+        band: &gdal::raster::RasterBand,
+        x_off: isize,
+        y_off: isize,
+        native_w: usize,
+        native_h: usize,
+        out_w: usize,
+        out_h: usize,
+        target_downscaling: usize,
+    ) -> gdal::raster::Buffer<f32> {
+        let overview_count = band.overview_count().unwrap_or(0);
+
+        // Largeur/hauteur de la bande à pleine résolution -- PAS celle de la tuile.
+        let (band_full_w, band_full_h) = band.size();
+
+        if overview_count > 0 {
+            let mut best: Option<(usize, gdal::raster::RasterBand)> = None;
+
+            for idx in 0..overview_count {
+                if let Ok(ov) = band.overview(idx as usize) {
+                    let (ov_w, _ov_h) = ov.size();
+                    // Facteur de réduction de CETTE overview par rapport au raster complet.
+                    let factor = (band_full_w / ov_w.max(1)).max(1);
+
+                    if factor <= target_downscaling {
+                        let is_better = best
+                            .as_ref()
+                            .map(|(best_factor, _)| factor > *best_factor)
+                            .unwrap_or(true);
+                        if is_better {
+                            best = Some((factor, ov));
+                        }
+                    }
+                }
+            }
+
+            if let Some((factor, overview_band)) = best {
+                let ov_x_off = x_off / factor as isize;
+                let ov_y_off = y_off / factor as isize;
+                let ov_w = (native_w / factor).max(1);
+                let ov_h = (native_h / factor).max(1);
+
+                if let Ok(buffer) = overview_band.read_as::<f32>(
+                    (ov_x_off, ov_y_off),
+                    (ov_w, ov_h),
+                    (out_w, out_h),
+                    Some(gdal::raster::ResampleAlg::Bilinear),
+                ) {
+                    return buffer;
+                }
+            }
+        }
+
+        band.read_as::<f32>(
+            (x_off, y_off),
+            (native_w, native_h),
+            (out_w, out_h),
+            Some(gdal::raster::ResampleAlg::Bilinear),
+        )
+        .expect("failed to read raster band")
+    }
+
+    /// Lit la série temporelle pour un pixel (x, y) et une bande/variable donnée.
+    ///
+    /// PLACEHOLDER: je ne sais pas comment ton cube encode le temps (bandes
+    /// successives ? sous-datasets ? fichiers séparés ?). Je pars du principe
+    /// le plus simple -- une bande GDAL par pas de temps pour cette variable --
+    /// mais dis-moi la vraie structure pour que je corrige `time_step_count`
+    /// et `band_index_for` en conséquence.
+    pub fn load_series(&self, x: usize, y: usize, band: usize) -> SeriesPayload {
+        let n_time_steps = self.time_step_count();
+        let mut values = Vec::with_capacity(n_time_steps);
+
+        for t in 0..n_time_steps {
+            let band_index = self.band_index_for(band, t);
+            let raster_band = self
+                .dataset
+                .rasterband(band_index)
+                .expect("band index out of range");
+
+            let buffer: gdal::raster::Buffer<f32> = raster_band
+                .read_as::<f32>((x as isize, y as isize), (1, 1), (1, 1), None)
+                .expect("failed to read pixel");
+
+            values.push(buffer.data()[0]);
+        }
+
+        SeriesPayload { values }
+    }
+
+    /// Nombre de pas de temps -- placeholder, à corriger selon ta structure réelle.
+    fn time_step_count(&self) -> usize {
+        self.dataset.raster_count() as usize // FAUX si plusieurs variables partagent les bandes
+    }
+
+    /// Placeholder: convertit (variable, pas de temps) en index de bande GDAL 1-based.
+    fn band_index_for(&self, band: usize, time_index: usize) -> usize {
+        band * self.time_step_count() + time_index + 1
+    }
+
     pub(crate) fn new(path: impl AsRef<Path>) -> Result<Self> {
         let dataset = Dataset::open(&path)?;
         let dataset_properties = DatasetProperties::from_dataset(&dataset);
@@ -197,5 +342,97 @@ impl BandProperties {
                 ],
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gdal::raster::{Buffer, GdalType};
+    use gdal::{Dataset, DriverManager};
+
+    /// Crée un dataset GDAL en mémoire (driver MEM) avec un motif connu,
+    /// pour tester le pipeline de lecture sans fichier disque.
+    fn make_test_dataset(width: usize, height: usize) -> Dataset {
+        let driver = DriverManager::get_driver_by_name("MEM").unwrap();
+        let mut dataset = driver
+            .create_with_band_type::<f32, _>("", width, height, 1)
+            .unwrap();
+
+        dataset
+            .set_geo_transform(&[0.0, 1.0, 0.0, 0.0, 0.0, -1.0]) // north-up, 1 unit/pixel
+            .unwrap();
+
+        let mut band = dataset.rasterband(1).unwrap();
+        let mut data = vec![0f32; width * height];
+        for y in 0..height {
+            for x in 0..width {
+                data[y * width + x] = (x + y) as f32; // motif prévisible
+            }
+        }
+        let mut buffer = Buffer::new((width, height), data);
+        band.write((0, 0), (width, height), &mut buffer).unwrap();
+
+        // Génère de vraies overviews (facteurs 2, 4) pour tester cette branche.
+        dataset.build_overviews("NEAREST", &[2, 4], &[1]).unwrap();
+
+        dataset
+    }
+
+    #[test]
+    fn load_tile_native_resolution_matches_pattern() {
+        let dataset = make_test_dataset(100, 100);
+        let dataset_properties = DatasetProperties::from_dataset(&dataset);
+        let raster_handler = RasterHandler {
+            path: "".into(),
+            dataset,
+            dataset_properties,
+            band_properties: vec![],
+        };
+
+        let id = TileId {
+            downscaling: 1,
+            tile_x: 0,
+            tile_y: 0,
+            time_index: 0,
+        };
+        let raster_bbox = PixelBox::from([0, 10, 0, 10]);
+
+        let payload = raster_handler.load_tile(&id, &raster_bbox, &[0]);
+
+        assert_eq!(payload.width, 10);
+        assert_eq!(payload.height, 10);
+        // pixel (0,0) du motif x+y -> valeur attendue 0.0
+        assert_eq!(payload.values[0], 0.0);
+        // pixel (5,5) -> valeur attendue 10.0 (5+5)
+        assert_eq!(payload.values[5 * 10 + 5], 10.0);
+    }
+
+    #[test]
+    fn load_tile_downscaled_uses_overview() {
+        let dataset = make_test_dataset(100, 100);
+        let dataset_properties = DatasetProperties::from_dataset(&dataset);
+        let raster_handler = RasterHandler {
+            path: "".into(),
+            dataset,
+            dataset_properties,
+            band_properties: vec![],
+        };
+
+        let id = TileId {
+            downscaling: 4,
+            tile_x: 0,
+            tile_y: 0,
+            time_index: 0,
+        };
+        let raster_bbox = PixelBox::from([0, 40, 0, 40]);
+
+        let payload = raster_handler.load_tile(&id, &raster_bbox, &[0]);
+
+        // 40 pixels natifs / downscaling 4 -> 10x10 en sortie
+        assert_eq!(payload.width, 10);
+        assert_eq!(payload.height, 10);
+        // pas de crash, valeurs dans une plage plausible (0 à 80 pour ce motif)
+        assert!(payload.values.iter().all(|&v| (0.0..=80.0).contains(&v)));
     }
 }

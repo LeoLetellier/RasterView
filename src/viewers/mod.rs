@@ -9,9 +9,9 @@ use ndarray::Array2;
 use rayon::prelude::*;
 use std::path::{Path, PathBuf};
 
-mod coords;
-mod tiler;
-mod ui;
+pub mod coords;
+pub mod tiler;
+pub mod ui;
 
 use std::fmt;
 
