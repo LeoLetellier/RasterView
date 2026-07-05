@@ -1,29 +1,53 @@
-// use crate::{raster::RasterHandler, texture_thread::TextureWorker};
 use crate::raster::RasterHandler;
-use anyhow::Result;
-use egui::{ColorImage, TextureOptions};
-use egui::{TextureHandle, Ui, vec2};
-use egui_plot::PlotBounds;
-use egui_plot::{Plot, PlotImage, PlotPoint};
-use ndarray::Array2;
-use rayon::prelude::*;
-use std::path::{Path, PathBuf};
+use crate::viewers::tiler::{CacheTexture, DataCube, TileId, VisMode};
+use std::fmt;
 
 pub mod coords;
+pub mod thread;
 pub mod tiler;
 pub mod ui;
 
-use std::fmt;
-
-#[derive(Debug, Default)]
+/// Core of the raster viewer / visualization
+///
+/// It holds both the cache and the user input parameters
+// #[derive(Debug, Default)]
 pub struct Viewer {
     /// Actual raster
     pub raster_handler: Option<RasterHandler>,
     /// Mode of data visualization
+    ///
+    /// ie which parameters to use and how
     pub view_mode: ViewMode,
     /// Actual parameters for the visualisation
+    ///
+    /// All possible parameters, not tight to a single mode
     pub view_selection: BandSelection,
+    /// Cache for the raw data
+    pub data_cube: Option<DataCube>,
+    /// Cache for the texture ready
+    pub texture_cache: CacheTexture,
 }
+
+// impl Viewer {
+//     pub fn current_vis_mode(&self) -> VisMode {
+//         match self.view_mode {
+//             ViewMode::Panchro => VisMode::ColorMap {
+//                 band: self.view_selection.panchro_band,
+//                 colormap: self.view_selection.colormap.cache_key(), // voir ci-dessous
+//             },
+//             ViewMode::Color => VisMode::RgbComposite {
+//                 r: self.view_selection.r_band,
+//                 g: self.view_selection.g_band,
+//                 b: self.view_selection.b_band,
+//             },
+//             ViewMode::Cpx => {
+//                 // Pas encore de variante VisMode dédiée -- à ajouter au tiler
+//                 // quand ce mode sera branché (amplitude/phase -> scalaire -> colormap).
+//                 todo!("VisMode::Cpx pas encore défini côté tiler")
+//             }
+//         }
+//     }
+// }
 
 /// The three primary visualization modes.
 ///
@@ -105,6 +129,9 @@ pub enum Colormap {
     Lut(LutColormap),
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ColorMapName(String);
+
 /// Explicit input min/max.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ManualRange {
@@ -178,6 +205,7 @@ pub struct BandSelection {
 
     /// Colormap definition used to map scalar(s) -> RGBA.
     pub colormap: Colormap,
+    pub colormapname: ColorMapName,
 
     /// How `Color` mode computes normalization when multiple bands are involved.
     pub channel_norm: ChannelNorm,
@@ -194,6 +222,7 @@ impl Default for BandSelection {
             cpx_band: 1,
             cpx_view: CpxView::AmplitudeOnly,
             colormap: Colormap::MinMax,
+            colormapname: ColorMapName(String::from("Grey")),
             channel_norm: ChannelNorm::PerChannel,
         }
     }

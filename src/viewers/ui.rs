@@ -14,6 +14,27 @@ impl Viewer {
             .allow_zoom(true)
             .show(ui, |plot_ui| {});
     }
+
+    // pub fn show(&mut self, ui: &mut Ui, ctx: &egui::Context) {
+    //     let Some(raster_handler) = &self.raster_handler else {
+    //         return;
+    //     };
+    //     let Some(data_cube) = &mut self.data_cube else {
+    //         return;
+    //     };
+
+    //     let mode = self.current_vis_mode();
+    //     // let visible_tiles: Vec<TileId> = data_cube
+    //     //     .tiles_for_view(/* geo view courant, downscaling courant */)
+    //     //     .map(|t| t.id)
+    //     //     .collect();
+
+    //     // for tile_id in visible_tiles {
+    //     //     let output =
+    //     //         data_cube.render(&mode, tile_id, &mut self.texture_cache, ctx, raster_handler);
+    //     //     // dispatcher output vers ui.painter().image(...) ou egui_plot::Line
+    //     // }
+    // }
 }
 
 // use super::{ReadOptions, TextureWorker, ViewMode, ViewModeWorker};

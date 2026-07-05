@@ -1,30 +1,33 @@
 use crate::raster::RasterHandler;
+use crate::viewers::Colormap;
 use crate::viewers::coords::{Bbox, GeoBox, GeoTransform, PixelBox};
+use egui::TextureHandle;
+use gdal::raster::Buffer;
 use std::collections::{HashMap, VecDeque};
 use std::hash::Hash;
 use std::sync::Arc;
 
 /// Getter for the object in-memory size
-pub trait ByteSized {
-    fn byte_size(&self) -> usize;
+pub trait CacheSized {
+    fn cache_size(&self) -> usize;
 }
 
 /// Common architecture for caching data
-pub struct BoundedCache<K: Eq + Hash + Clone, V: ByteSized> {
+pub struct BoundedCache<K: Eq + Hash + Clone, V: CacheSized> {
     entries: HashMap<K, Arc<V>>,
     lru_order: VecDeque<K>,
-    current_bytes: usize,
-    max_bytes: usize,
+    current_cache_size: usize,
+    max_cache_size: usize,
 }
 
-impl<K: Eq + Hash + Clone, V: ByteSized> BoundedCache<K, V> {
+impl<K: Eq + Hash + Clone, V: CacheSized> BoundedCache<K, V> {
     /// Initialize the cache with max_bytes
-    pub fn new(max_bytes: usize) -> Self {
+    pub fn new(max_cache_size: usize) -> Self {
         Self {
             entries: HashMap::new(),
             lru_order: VecDeque::new(),
-            current_bytes: 0,
-            max_bytes,
+            current_cache_size: 0,
+            max_cache_size,
         }
     }
 
@@ -49,18 +52,18 @@ impl<K: Eq + Hash + Clone, V: ByteSized> BoundedCache<K, V> {
 
     /// Get a tile to cache
     fn insert(&mut self, key: K, value: V) -> Arc<V> {
-        let size = value.byte_size();
+        let size = value.cache_size();
         self.evict_to_fit(size);
         let arc = Arc::new(value);
         self.entries.insert(key.clone(), arc.clone());
         self.lru_order.push_back(key);
-        self.current_bytes += size;
+        self.current_cache_size += size;
         arc
     }
 
     /// Check if need to release a tile due to memory bounds
     fn evict_to_fit(&mut self, incoming: usize) {
-        while self.current_bytes + incoming > self.max_bytes {
+        while self.current_cache_size + incoming > self.max_cache_size {
             let pos = self.lru_order.iter().position(|k| {
                 self.entries
                     .get(k)
@@ -71,7 +74,8 @@ impl<K: Eq + Hash + Clone, V: ByteSized> BoundedCache<K, V> {
                 Some(i) => {
                     let k = self.lru_order.remove(i).unwrap();
                     if let Some(v) = self.entries.remove(&k) {
-                        self.current_bytes = self.current_bytes.saturating_sub(v.byte_size());
+                        self.current_cache_size =
+                            self.current_cache_size.saturating_sub(v.byte_size());
                     }
                 }
                 None => break, // all in use
@@ -80,11 +84,51 @@ impl<K: Eq + Hash + Clone, V: ByteSized> BoundedCache<K, V> {
     }
 }
 
+pub struct CacheHandler {
+    tiles: BoundedCache<TileId, CacheTile>,
+    // time_series: BoundedCache<TimeSeriesId, CacheTimeSeries>,
+    textures: BoundedCache<TextureId, CacheTexture>,
+}
+
+#[derive(Debug)]
+pub struct CacheTile(Buffer<f32>);
+
+#[derive(Debug, Eq, Hash, Clone)]
+pub struct TileId {
+    pub tile_x: usize,
+    pub tile_y: usize,
+    pub tile_band: usize,
+    pub downscaling: usize,
+}
+
+impl CacheSized for CacheTile {
+    fn cache_size(&self) -> usize {
+        // count space in bytes from size of f32
+        self.0.len() * std::mem::size_of::<f32>()
+    }
+}
+
+// pub struct CacheTimeSeries {
+//     pub values: Vec<f32>,
+// }
+
+// pub struct TimeSeriesId;
+
 /// Caching for the egui-texture, easy to drop
-pub struct CacheTexture {
-    entries: HashMap<TextureKey, egui::TextureHandle>,
-    lru_order: VecDeque<TextureKey>,
-    max_textures: usize,
+#[derive(Debug)]
+pub struct CacheTexture(TextureHandle);
+
+impl CacheSized for CacheTexture {
+    fn cache_size(&self) -> usize {
+        // count space as nb of texture, so unit here
+        1
+    }
+}
+
+#[derive(Debug, Eq, Hash, Clone)]
+pub struct TextureId {
+    pub tile: TileId,
+    pub params: VisParams,
 }
 
 impl CacheTexture {
@@ -175,6 +219,20 @@ pub struct SeriesId {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ColormapId(pub String);
+
+impl Colormap {
+    /// Réduit le Colormap riche (avec ses f32) en une clé de cache stable.
+    /// Deux Colormap "équivalents pour l'affichage" doivent donner la même clé.
+    pub fn cache_key(&self) -> ColormapId {
+        match self {
+            Colormap::MinMax => ColormapId("minmax".into()),
+            Colormap::Manual(r) => ColormapId(format!("manual:{}:{}", r.input_min, r.input_max)),
+            Colormap::Percentile(p) => ColormapId(format!("pct:{}:{}", p.low, p.high)),
+            // ... autres variantes
+            _ => ColormapId("other".into()),
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum VisParams {

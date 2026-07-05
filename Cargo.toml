@@ -1,12 +1,22 @@
 [package]
 name = "raster_view"
 version = "0.1.0"
+authors = ["Leo Letellier <leo.letellier.6@gmail.com>"]
 edition = "2024"
+description = "Tiny viewer for large GDAL rasters"
+# documentation
+readme = "README.md"
+# homepage
+repository = "https://github.com/LeoLetellier/RasterView"
+license = "AGPL-3.0-or-later"
+keywords = ["raster", "viewer", "gdal"]
+# categories
 build = "build.rs"
 
 [dependencies]
 anyhow = "1.0.102"
 clap = "4.6.1"
+crossbeam = "0.8.4"
 eframe = "0.34.2"
 egui = "0.34.2"
 egui_extras = "0.34.2"

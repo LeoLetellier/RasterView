@@ -4,6 +4,12 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 // use std::time::Duration;
 
+// TODO
+//
+// have 2 to 4 threads in parallel
+//
+// need to use crossbeam for more robust thread handling
+
 /// Handler of the texture thread
 ///
 /// * `texture_worker.request_load(worker)` to ask to generate new texture
