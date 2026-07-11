@@ -4,7 +4,7 @@ use egui::{RichText, Ui};
 use gdal::raster::RasterBand;
 
 impl RasterHandler {
-    fn ui_dataset(&self, ui: &mut Ui) {
+    pub fn ui_dataset(&self, ui: &mut Ui) {
         let dataset = &self.0;
         let driver = dataset.driver().short_name();
         let size = dataset.raster_size();

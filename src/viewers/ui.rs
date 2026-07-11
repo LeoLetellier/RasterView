@@ -1,10 +1,23 @@
-use crate::viewers::Viewer;
+use crate::viewers::{Viewer, dummy_checkerboard, dummy_gradient};
 use egui::{Ui, vec2};
 use egui_plot::{Plot, PlotBounds, PlotImage, PlotPoint, PlotUi};
 
 impl Viewer {
     pub fn ui(&mut self, ui: &mut Ui) {
-        egui::Panel::right("right panel").show_inside(ui, |_ui| {});
+        // egui::Panel::right("right panel").show_inside(ui, |_ui| {});
+
+        let width = 256;
+        let height = 256;
+        let raw = dummy_checkerboard(width, height, 16);
+        let raw = dummy_gradient(width, height);
+
+        let color_image = egui::ColorImage::from_rgba_unmultiplied([width, height], &raw);
+
+        let handle = ui.load_texture(
+            "dummy_checkerboard",
+            color_image,
+            egui::TextureOptions::default(),
+        );
 
         Plot::new("main_plot")
             .data_aspect(1.0)
@@ -12,7 +25,14 @@ impl Viewer {
             .boxed_zoom_pointer_button(egui::PointerButton::Secondary)
             .allow_scroll(false)
             .allow_zoom(true)
-            .show(ui, |plot_ui| {});
+            .show(ui, |plot_ui| {
+                plot_ui.image(PlotImage::new(
+                    "raster",
+                    handle.id(),
+                    PlotPoint::new(128.0, 128.0),
+                    vec2(256.0, 256.0),
+                ));
+            });
     }
 
     // pub fn show(&mut self, ui: &mut Ui, ctx: &egui::Context) {

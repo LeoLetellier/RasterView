@@ -1,10 +1,14 @@
+use anyhow::Result;
+use egui::ColorImage;
+use std::path::Path;
+
 use crate::raster::RasterHandler;
 use crate::viewers::coords::GeoBox;
 use crate::viewers::tiler::CacheHandler;
 
 pub mod cmap;
 pub mod coords;
-pub mod thread;
+// pub mod thread;
 pub mod tiler;
 pub mod ui;
 
@@ -24,6 +28,22 @@ pub struct Viewer {
     pub view_mode: ViewMode,
     /// Caching
     pub cache: Option<CacheHandler>,
+    // Texture
+    pub texture: Option<ColorImage>,
+}
+
+impl Viewer {
+    pub fn with_raster(path: &Path) -> Result<Self> {
+        let mut viewer = Self::default();
+        let raster_handler = RasterHandler::new(path)?;
+        viewer.raster_handler = Some(raster_handler);
+
+        Ok(viewer)
+    }
+
+    pub fn refresh_cache(&mut self) -> Result<()> {
+        todo!()
+    }
 }
 
 impl Default for Viewer {
@@ -35,6 +55,7 @@ impl Default for Viewer {
             downscaling: 0,
             view_mode: Default::default(),
             cache: None,
+            texture: None,
         }
     }
 }
@@ -48,19 +69,6 @@ pub enum CpxView {
     WrappedPhaseOnly,
     /// Superpose amplitude and phase into a composite visualization.
     CompositeAmpPhase,
-}
-
-/// Whether `Color` mode uses one shared normalization across all selected channels
-/// or prepares mappings per-channel.
-///
-/// (You can use this in your worker to decide whether to compute one set of min/max
-/// stats or one per band.)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ChannelNorm {
-    /// One normalization/range strategy for all RGB(A) channels.
-    Shared,
-    /// One normalization/range strategy per channel.
-    PerChannel,
 }
 
 #[derive(Debug, Eq, PartialEq, Hash, Clone)]
@@ -93,4 +101,39 @@ pub enum ActiveViewer {
     Panchro,
     Color,
     Cpx,
+}
+
+pub fn dummy_checkerboard(width: usize, height: usize, cell_size: usize) -> Vec<u8> {
+    let mut pixels = Vec::with_capacity(width * height * 4);
+
+    for y in 0..height {
+        for x in 0..width {
+            let is_light = ((x / cell_size) + (y / cell_size)) % 2 == 0;
+            let (r, g, b) = if is_light {
+                (220, 220, 220)
+            } else {
+                (40, 40, 40)
+            };
+            pixels.push(r);
+            pixels.push(g);
+            pixels.push(b);
+            pixels.push(255); // alpha
+        }
+    }
+
+    pixels
+}
+
+pub fn dummy_gradient(width: usize, height: usize) -> Vec<u8> {
+    let mut pixels = Vec::with_capacity(width * height * 4);
+    for y in 0..height {
+        for x in 0..width {
+            let v = ((x * 255) / width.max(1)) as u8;
+            pixels.push(v);
+            pixels.push(v);
+            pixels.push(v);
+            pixels.push(255);
+        }
+    }
+    pixels
 }

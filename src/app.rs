@@ -2,37 +2,68 @@ use crate::raster::RasterHandler;
 // use crate::texture_thread::TextureWorker;
 use crate::viewers::Viewer;
 use anyhow::{Result, bail};
+use egui::Color32;
+use egui::RichText;
+use egui::TextureHandle;
+use egui::Ui;
+use egui_phosphor as icon;
+use std::path::Path;
 use std::path::PathBuf;
 
 pub struct RasterView {
     raster_path: Option<PathBuf>,
-    viewer: Viewer,
+    viewer: Option<Viewer>,
     // texture_worker: TextureWorker,
-    left_panel_collapsed: bool,
+    left_panel: LeftPanel,
+    right_panel: RightPanel,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum LeftPanel {
+    Metadata,
+    Closed,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum RightPanel {
+    Palette,
+    Closed,
 }
 
 impl RasterView {
     pub fn new(ctx: egui::Context) -> Self {
         // let texture_worker = TextureWorker::new(ctx);
+
+        let mut fonts = egui::FontDefinitions::default();
+        icon::add_to_fonts(&mut fonts, icon::Variant::Regular);
+        icon::add_to_fonts(&mut fonts, icon::Variant::Fill);
+        ctx.set_fonts(fonts);
+
         Self {
             raster_path: Default::default(),
             viewer: Default::default(),
             // texture_worker,
-            left_panel_collapsed: false,
+            left_panel: LeftPanel::Metadata,
+            right_panel: RightPanel::Closed,
         }
     }
 
-    fn update_datasets(&mut self) -> Result<()> {
+    fn update_path(&mut self, new_path: &Path) -> Result<()> {
         if let Some(path) = &self.raster_path {
-            let raster_handler = RasterHandler::new(path)?;
-            // self.view_mode = Some(ViewMode::Panchromatic(
-            //     raster_handler,
-            //     PanchromaticParams::default(),
-            //     None,
-            // ));
-            return Ok(());
+            // Check if we really got new raster
+            if path != new_path {
+                self.viewer = Some(Viewer::with_raster(new_path)?);
+            } else {
+                // Nothing to do, early return
+                return Ok(());
+            }
+        } else {
+            // First raster to initialize
+            self.viewer = Some(Viewer::with_raster(new_path)?);
         }
-        bail!("no dataset to update");
+
+        self.raster_path = Some(new_path.into());
+        Ok(())
     }
 
     // /// Delete the current view in case load a file non supported
@@ -40,82 +71,10 @@ impl RasterView {
     // fn clear_datasets(&mut self) {
     //     self.view_mode = None;
     // }
-}
-
-impl eframe::App for RasterView {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        ui.ctx().input(|i| {
-            if let Some(dropped) = i.raw.dropped_files.first() {
-                if let Some(path) = &dropped.path {
-                    self.raster_path = Some(path.clone());
-                    let _ = self.update_datasets();
-                }
-            }
-        });
-
-        egui::Panel::top("top panel").show_inside(ui, |ui| {
-            egui::MenuBar::new().ui(ui, |ui| {
-                let left_panel_symbol = if self.left_panel_collapsed {
-                    "⏶"
-                } else {
-                    "⏷"
-                };
-                if ui.button(left_panel_symbol).clicked() {
-                    self.left_panel_collapsed = !self.left_panel_collapsed;
-                }
-
-                let button_file_name = if let Some(path) = &self.raster_path {
-                    format!(
-                        "File: {}",
-                        path.file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("Unknown")
-                    )
-                } else {
-                    "File".to_string()
-                };
-                if ui
-                    .button(button_file_name)
-                    .on_hover_text("Open file...")
-                    .clicked()
-                {
-                    self.raster_path = rfd::FileDialog::new().pick_file();
-                    // self.clear_datasets();
-                    self.update_datasets();
-                }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    egui::widgets::global_theme_preference_switch(ui);
-                    if ui
-                        .button("Refresh")
-                        .on_hover_text("refetch all data from file")
-                        .clicked()
-                    {
-                        self.update_datasets();
-                    }
-                });
-            });
-        });
-
-        egui::Panel::bottom("bottom panel").show_inside(ui, |ui| {
-            if cfg!(debug_assertions) {
-                let ms = ui.ctx().input(|i| i.unstable_dt * 1000.0);
-
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    egui::warn_if_debug_build(ui);
-                    ui.label(format!("{ms:.1} ms"));
-                });
-            }
-        });
-
-        let is_open = !self.left_panel_collapsed;
-        egui::Panel::left("left panel")
-            .resizable(is_open)
-            .size_range(if is_open {
-                100.0..=ui.ctx().content_rect().width() * 0.33
-            } else {
-                0.0..=0.0
-            })
-            .show_animated_inside(ui, is_open, |ui| {
+    //
+    fn ui_left_panel(&self, ui: &mut Ui) {
+        match self.left_panel {
+            LeftPanel::Metadata => {
                 ui.heading("Raster Information");
                 ui.separator();
 
@@ -154,46 +113,129 @@ impl eframe::App for RasterView {
                 });
 
                 {
-                    if let Some(raster) = self.viewer.raster_handler.as_mut() {
-                        egui::ScrollArea::vertical().show(ui, |ui| {
-                            ui.heading("Dataset");
-                            ui.separator();
-                            egui::ScrollArea::horizontal()
-                                .id_salt("dataset scroll")
-                                .show(ui, |ui| raster.dataset_properties.ui(ui));
-                            for i in 0..raster.dataset.raster_count() {
-                                ui.collapsing(format!("Band {}", i + 1), |ui| {
-                                    raster.band_properties[i].ui(ui);
-                                });
-                            }
-                        });
+                    if let Some(viewer) = &self.viewer {
+                        if let Some(raster_handler) = &viewer.raster_handler {
+                            egui::ScrollArea::both().show(ui, |ui| {
+                                raster_handler.ui_dataset(ui);
+                            });
+                        }
                     }
                 }
+            }
+            _ => (),
+        }
+    }
+}
+
+impl eframe::App for RasterView {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        ui.ctx().input(|i| {
+            if let Some(dropped) = i.raw.dropped_files.first() {
+                if let Some(path) = &dropped.path {
+                    let _ = self.update_path(&path.to_path_buf());
+                }
+            }
+        });
+
+        egui::Panel::top("top panel").show_inside(ui, |ui| {
+            egui::MenuBar::new().ui(ui, |ui| {
+                let button_file_name = if let Some(path) = &self.raster_path {
+                    format!(
+                        "File: {}",
+                        path.file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("Unknown")
+                    )
+                } else {
+                    "File".to_string()
+                };
+                if ui
+                    .button(button_file_name)
+                    .on_hover_text("Select a raster file")
+                    .clicked()
+                {
+                    if let Some(path) = rfd::FileDialog::new().pick_file() {
+                        let _ = self.update_path(path.as_path());
+                    }
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    egui::widgets::global_theme_preference_switch(ui);
+                    if ui
+                        .button("Refresh")
+                        .on_hover_text("refetch all data from file")
+                        .clicked()
+                    {
+                        if let Some(view) = &mut self.viewer {
+                            let _ = view.refresh_cache();
+                        }
+                    }
+                });
+            });
+        });
+
+        egui::Panel::bottom("bottom panel").show_inside(ui, |ui| {
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                let left_panel_metadata_symbol = if self.left_panel != LeftPanel::Metadata {
+                    RichText::new(icon::regular::ARTICLE_MEDIUM)
+                } else {
+                    RichText::new(icon::fill::ARTICLE_MEDIUM).color(Color32::from_rgb(30, 144, 255))
+                };
+                ui.scope(|ui| {
+                    ui.style_mut().spacing.button_padding = egui::vec2(0.0, 0.0);
+
+                    ui.visuals_mut().widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
+                    ui.visuals_mut().widgets.hovered.bg_fill = egui::Color32::TRANSPARENT;
+                    ui.visuals_mut().widgets.active.bg_fill = egui::Color32::TRANSPARENT;
+
+                    let btn = ui
+                        .add(
+                            egui::Button::new(left_panel_metadata_symbol)
+                                .frame(false)
+                                .min_size(egui::Vec2::ZERO),
+                        )
+                        .on_hover_text("Toggle metadata panel");
+                    let btn = if self.left_panel == LeftPanel::Metadata {
+                        btn.highlight()
+                    } else {
+                        btn
+                    };
+                    if btn.clicked() {
+                        match self.left_panel {
+                            LeftPanel::Metadata => self.left_panel = LeftPanel::Closed,
+                            _ => self.left_panel = LeftPanel::Metadata,
+                        }
+                    }
+                });
+
+                if cfg!(debug_assertions) {
+                    let ms = ui.ctx().input(|i| i.unstable_dt * 1000.0);
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        egui::warn_if_debug_build(ui);
+                        ui.label(format!("{ms:.1} ms"));
+                    });
+                }
+            });
+        });
+
+        let is_open = !(self.left_panel == LeftPanel::Closed);
+        egui::Panel::left("left panel")
+            .resizable(is_open)
+            .size_range(if is_open {
+                100.0..=ui.ctx().content_rect().width() * 0.33
+            } else {
+                0.0..=0.0
+            })
+            .show_animated_inside(ui, is_open, |ui| {
+                self.ui_left_panel(ui);
             });
 
-        // egui::Panel::right("right panel").show_inside(ui, |_ui| {});
+        egui::Panel::right("right panel").show_inside(ui, |_ui| {});
 
-        let viewer = &mut self.viewer;
         egui::CentralPanel::default().show_inside(ui, |ui| {
-            viewer.ui(ui);
-        });
-    }
-}
-
-pub fn prop_ui(ui: &mut egui::Ui, value: &str) {
-    if ui.button(egui::RichText::new(value).monospace()).clicked() {
-        ui.ctx().copy_text(value.to_string());
-    }
-}
-
-pub fn prop_section(ui: &mut egui::Ui, section_name: Option<&str>, props: &[[String; 2]]) {
-    if let Some(n) = section_name {
-        ui.label(n);
-    }
-    for prop in props {
-        ui.horizontal(|ui| {
-            ui.label(&prop[0]);
-            prop_ui(ui, &prop[1]);
+            if let Some(view) = &mut self.viewer {
+                view.ui(ui);
+            }
         });
     }
 }
