@@ -4,6 +4,8 @@ use gdal::{Dataset, raster::ResampleAlg};
 use rayon::prelude::*;
 use std::{ops::Deref, path::Path};
 
+use crate::viewers::coords;
+
 pub mod ui;
 
 #[derive(Debug)]
@@ -27,6 +29,13 @@ impl Deref for RasterHandler {
 // }
 
 impl RasterHandler {
+    /// Fetch the raster geotransform for conversion between `PixelBox` and `GeoBox`
+    pub fn get_pixel_geotransform(&self) -> Option<coords::GeoTransform> {
+        self.geo_transform()
+            .ok()
+            .map(|gt| coords::GeoTransform::from(gt))
+    }
+
     // pub fn load_tile(&self, id: &TileId, raster_bbox: &PixelBox, bands: &[usize]) -> TilePayload {
     //     let x_off = raster_bbox.xmin() as isize;
     //     let y_off = raster_bbox.ymin() as isize;

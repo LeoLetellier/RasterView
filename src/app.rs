@@ -44,7 +44,7 @@ impl RasterView {
             viewer: Default::default(),
             // texture_worker,
             left_panel: LeftPanel::Metadata,
-            right_panel: RightPanel::Closed,
+            right_panel: RightPanel::Palette,
         }
     }
 
@@ -63,6 +63,13 @@ impl RasterView {
         }
 
         self.raster_path = Some(new_path.into());
+        Ok(())
+    }
+
+    fn reset_viewer(&mut self) -> Result<()> {
+        if let Some(path) = &self.raster_path {
+            self.viewer = Some(Viewer::with_raster(&path.as_path())?);
+        }
         Ok(())
     }
 
@@ -125,6 +132,212 @@ impl RasterView {
             _ => (),
         }
     }
+
+    fn ui_bottom_panel(&mut self, ui: &mut Ui) {
+        egui::Grid::new("bottom grid")
+            .num_columns(3)
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    let left_panel_metadata_symbol = if self.left_panel != LeftPanel::Metadata {
+                        RichText::new(icon::regular::ARTICLE_MEDIUM)
+                    } else {
+                        RichText::new(icon::fill::ARTICLE_MEDIUM)
+                            .color(Color32::from_rgb(30, 144, 255))
+                    };
+                    ui.scope(|ui| {
+                        ui.style_mut().spacing.button_padding = egui::vec2(0.0, 0.0);
+
+                        ui.visuals_mut().widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
+                        ui.visuals_mut().widgets.hovered.bg_fill = egui::Color32::TRANSPARENT;
+                        ui.visuals_mut().widgets.active.bg_fill = egui::Color32::TRANSPARENT;
+
+                        let btn = ui
+                            .add(
+                                egui::Button::new(left_panel_metadata_symbol)
+                                    .frame(false)
+                                    .min_size(egui::Vec2::ZERO),
+                            )
+                            .on_hover_text("Toggle metadata panel");
+                        let btn = if self.left_panel == LeftPanel::Metadata {
+                            btn.highlight()
+                        } else {
+                            btn
+                        };
+                        if btn.clicked() {
+                            match self.left_panel {
+                                LeftPanel::Metadata => self.left_panel = LeftPanel::Closed,
+                                _ => self.left_panel = LeftPanel::Metadata,
+                            }
+                        }
+                    });
+                });
+
+                ui.horizontal_centered(|ui| {});
+
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let right_panel_metadata_symbol = if self.right_panel != RightPanel::Palette {
+                        RichText::new(icon::regular::PAINT_BRUSH_HOUSEHOLD)
+                    } else {
+                        RichText::new(icon::fill::PAINT_BRUSH_HOUSEHOLD)
+                            .color(Color32::from_rgb(30, 144, 255))
+                    };
+                    ui.scope(|ui| {
+                        ui.style_mut().spacing.button_padding = egui::vec2(0.0, 0.0);
+
+                        ui.visuals_mut().widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
+                        ui.visuals_mut().widgets.hovered.bg_fill = egui::Color32::TRANSPARENT;
+                        ui.visuals_mut().widgets.active.bg_fill = egui::Color32::TRANSPARENT;
+
+                        let btn = ui
+                            .add(
+                                egui::Button::new(right_panel_metadata_symbol)
+                                    .frame(false)
+                                    .min_size(egui::Vec2::ZERO),
+                            )
+                            .on_hover_text("Toggle palette panel");
+                        let btn = if self.right_panel == RightPanel::Palette {
+                            btn.highlight()
+                        } else {
+                            btn
+                        };
+                        if btn.clicked() {
+                            match self.right_panel {
+                                RightPanel::Palette => self.right_panel = RightPanel::Closed,
+                                _ => self.right_panel = RightPanel::Palette,
+                            }
+                        }
+                    });
+
+                    if cfg!(debug_assertions) {
+                        let ms = ui.ctx().input(|i| i.unstable_dt * 1000.0);
+                        egui::warn_if_debug_build(ui);
+                        ui.label(format!("{ms:.1} ms"));
+                    }
+
+                    if let Some(view) = &self.viewer {
+                        if let Some(px_pos) = view.state.last_cursor_pos {
+                            // Get pixel integers
+                            let x_pos = px_pos.x.max(0.0).floor();
+                            let y_pos = px_pos.y.max(0.0).floor();
+
+                            if let Some(gt) = view
+                                .raster_handler
+                                .as_ref()
+                                .map(|r| r.get_pixel_geotransform())
+                                .flatten()
+                            {
+                                let geo_pos = gt.pixel_to_geo(x_pos, y_pos);
+                                ui.label(format!(" | geo: ({:.3},{:.3})", geo_pos.0, geo_pos.1));
+                            }
+                            ui.label(format!("px: ({:.0},{:.0})", x_pos, y_pos));
+                        }
+                    }
+                });
+            });
+        // ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+        //     let left_panel_metadata_symbol = if self.left_panel != LeftPanel::Metadata {
+        //         RichText::new(icon::regular::ARTICLE_MEDIUM)
+        //     } else {
+        //         RichText::new(icon::fill::ARTICLE_MEDIUM).color(Color32::from_rgb(30, 144, 255))
+        //     };
+        //     ui.scope(|ui| {
+        //         ui.style_mut().spacing.button_padding = egui::vec2(0.0, 0.0);
+
+        //         ui.visuals_mut().widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
+        //         ui.visuals_mut().widgets.hovered.bg_fill = egui::Color32::TRANSPARENT;
+        //         ui.visuals_mut().widgets.active.bg_fill = egui::Color32::TRANSPARENT;
+
+        //         let btn = ui
+        //             .add(
+        //                 egui::Button::new(left_panel_metadata_symbol)
+        //                     .frame(false)
+        //                     .min_size(egui::Vec2::ZERO),
+        //             )
+        //             .on_hover_text("Toggle metadata panel");
+        //         let btn = if self.left_panel == LeftPanel::Metadata {
+        //             btn.highlight()
+        //         } else {
+        //             btn
+        //         };
+        //         if btn.clicked() {
+        //             match self.left_panel {
+        //                 LeftPanel::Metadata => self.left_panel = LeftPanel::Closed,
+        //                 _ => self.left_panel = LeftPanel::Metadata,
+        //             }
+        //         }
+        //     });
+
+        //     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        //         if let Some(view) = &self.viewer {
+        //             if let Some(px_pos) = view.last_cursor_pos {
+        //                 if let Some(gt) = view
+        //                     .raster_handler
+        //                     .as_ref()
+        //                     .map(|r| r.get_pixel_geotransform())
+        //                     .flatten()
+        //                 {
+        //                     let geo_pos = gt.pixel_to_geo(px_pos.x, px_pos.y);
+        //                     ui.label(format!(" | geo: ({:.3},{:.3})", geo_pos.0, geo_pos.1));
+        //                 }
+        //                 ui.label(format!("px: ({:.0},{:.0})", px_pos.x, px_pos.y));
+        //                 ui.end_row();
+        //             }
+        //         }
+        //     });
+
+        //     if cfg!(debug_assertions) {
+        //         let ms = ui.ctx().input(|i| i.unstable_dt * 1000.0);
+
+        //         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        //             egui::warn_if_debug_build(ui);
+        //             ui.label(format!("{ms:.1} ms"));
+        //         });
+        //     }
+        // });
+    }
+
+    fn ui_top_panel(&mut self, ui: &mut Ui) {
+        egui::MenuBar::new().ui(ui, |ui| {
+            let button_file_name = if let Some(path) = &self.raster_path {
+                format!(
+                    "File: {}",
+                    path.file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("Unknown")
+                )
+            } else {
+                "File".to_string()
+            };
+            if ui
+                .button(button_file_name)
+                .on_hover_text("Select a raster file")
+                .clicked()
+            {
+                if let Some(path) = rfd::FileDialog::new().pick_file() {
+                    let _ = self.update_path(path.as_path());
+                }
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                egui::widgets::global_theme_preference_switch(ui);
+                if ui
+                    .button("Refresh")
+                    .on_hover_text("refetch all data from file")
+                    .clicked()
+                {
+                    if let Some(view) = &mut self.viewer {
+                        let _ = view.refresh_cache();
+                    }
+                }
+            });
+        });
+    }
+
+    fn ui_right_panel(&mut self, ui: &mut Ui) {
+        match &self.right_panel {
+            RightPanel::Palette => {}
+            RightPanel::Closed => {}
+        }
+    }
 }
 
 impl eframe::App for RasterView {
@@ -138,84 +351,11 @@ impl eframe::App for RasterView {
         });
 
         egui::Panel::top("top panel").show_inside(ui, |ui| {
-            egui::MenuBar::new().ui(ui, |ui| {
-                let button_file_name = if let Some(path) = &self.raster_path {
-                    format!(
-                        "File: {}",
-                        path.file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("Unknown")
-                    )
-                } else {
-                    "File".to_string()
-                };
-                if ui
-                    .button(button_file_name)
-                    .on_hover_text("Select a raster file")
-                    .clicked()
-                {
-                    if let Some(path) = rfd::FileDialog::new().pick_file() {
-                        let _ = self.update_path(path.as_path());
-                    }
-                }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    egui::widgets::global_theme_preference_switch(ui);
-                    if ui
-                        .button("Refresh")
-                        .on_hover_text("refetch all data from file")
-                        .clicked()
-                    {
-                        if let Some(view) = &mut self.viewer {
-                            let _ = view.refresh_cache();
-                        }
-                    }
-                });
-            });
+            self.ui_top_panel(ui);
         });
 
         egui::Panel::bottom("bottom panel").show_inside(ui, |ui| {
-            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                let left_panel_metadata_symbol = if self.left_panel != LeftPanel::Metadata {
-                    RichText::new(icon::regular::ARTICLE_MEDIUM)
-                } else {
-                    RichText::new(icon::fill::ARTICLE_MEDIUM).color(Color32::from_rgb(30, 144, 255))
-                };
-                ui.scope(|ui| {
-                    ui.style_mut().spacing.button_padding = egui::vec2(0.0, 0.0);
-
-                    ui.visuals_mut().widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
-                    ui.visuals_mut().widgets.hovered.bg_fill = egui::Color32::TRANSPARENT;
-                    ui.visuals_mut().widgets.active.bg_fill = egui::Color32::TRANSPARENT;
-
-                    let btn = ui
-                        .add(
-                            egui::Button::new(left_panel_metadata_symbol)
-                                .frame(false)
-                                .min_size(egui::Vec2::ZERO),
-                        )
-                        .on_hover_text("Toggle metadata panel");
-                    let btn = if self.left_panel == LeftPanel::Metadata {
-                        btn.highlight()
-                    } else {
-                        btn
-                    };
-                    if btn.clicked() {
-                        match self.left_panel {
-                            LeftPanel::Metadata => self.left_panel = LeftPanel::Closed,
-                            _ => self.left_panel = LeftPanel::Metadata,
-                        }
-                    }
-                });
-
-                if cfg!(debug_assertions) {
-                    let ms = ui.ctx().input(|i| i.unstable_dt * 1000.0);
-
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        egui::warn_if_debug_build(ui);
-                        ui.label(format!("{ms:.1} ms"));
-                    });
-                }
-            });
+            self.ui_bottom_panel(ui);
         });
 
         let is_open = !(self.left_panel == LeftPanel::Closed);
@@ -230,7 +370,17 @@ impl eframe::App for RasterView {
                 self.ui_left_panel(ui);
             });
 
-        egui::Panel::right("right panel").show_inside(ui, |_ui| {});
+        let is_open = !(self.right_panel == RightPanel::Closed);
+        egui::Panel::right("right panel")
+            .resizable(is_open)
+            .size_range(if is_open {
+                100.0..=ui.ctx().content_rect().width() * 0.33
+            } else {
+                0.0..=0.0
+            })
+            .show_animated_inside(ui, is_open, |ui| {
+                self.ui_right_panel(ui);
+            });
 
         egui::CentralPanel::default().show_inside(ui, |ui| {
             if let Some(view) = &mut self.viewer {

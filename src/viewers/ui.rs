@@ -1,7 +1,9 @@
 use crate::raster::RasterHandler;
+use crate::viewers::coords::{Bbox, PixelBox};
+use crate::viewers::tiler::TileDescriptor;
 use crate::viewers::{Viewer, dummy_checkerboard, dummy_gradient};
 use egui::{Ui, vec2};
-use egui_plot::{Plot, PlotBounds, PlotImage, PlotPoint, PlotUi};
+use egui_plot::{Plot, PlotBounds, PlotImage, PlotPoint, PlotPoints, PlotUi, Polygon};
 
 impl Viewer {
     pub fn ui(&mut self, ui: &mut Ui) {
@@ -19,54 +21,92 @@ impl Viewer {
 
         // let color_image = egui::ColorImage::from_rgba_unmultiplied([width, height], &raw);
 
+        let tiles_needed = self.need_tiles();
+        // println!("{:?}", tiles_needed);
+
         let handle = if let Some(ci) = &self.color_image {
-            Some(ui.load_texture(
-                "dummy_checkerboard",
-                ci.clone(),
-                egui::TextureOptions::default(),
+            Some((
+                ui.load_texture(
+                    "dummy_checkerboard",
+                    ci.clone(),
+                    egui::TextureOptions::NEAREST,
+                ),
+                ci.width(),
+                ci.height(),
             ))
         } else {
             None
         };
 
-        Plot::new("main_plot")
+        let ppp = ui.ctx().pixels_per_point() as f64;
+
+        let plot_response = Plot::new("main_plot")
             .data_aspect(1.0)
             .pan_pointer_button(egui::PointerButton::Primary)
             .boxed_zoom_pointer_button(egui::PointerButton::Secondary)
             .allow_scroll(false)
             .allow_zoom(true)
+            .show_grid(false)
             .show(ui, |plot_ui| {
-                if let Some(h) = handle {
+                let last_screen_size = plot_ui.response().rect;
+                self.state.last_screen_size = Some((
+                    last_screen_size.width() as f64 * ppp,
+                    last_screen_size.height() as f64 * ppp,
+                ));
+
+                self.state.last_bounds = Some(plot_ui.plot_bounds());
+
+                if let Some((h, width, height)) = handle {
                     plot_ui.image(PlotImage::new(
                         "raster",
                         h.id(),
-                        PlotPoint::new(128.0, 128.0),
-                        vec2(256.0, 256.0),
+                        PlotPoint::new(width as f64 / 2.0, height as f64 / 2.0),
+                        vec2(width as f32, height as f32),
                     ))
                 };
+
+                if let Some(tiles) = tiles_needed {
+                    tiles.iter().for_each(|t| t.ui_tile_bounds(plot_ui));
+                }
             });
+
+        // With this it is None when cursor is outside the plot
+        //
+        // otherwise could have used cursor_plot_pos = plot_ui.pointer_coordinate(); in the
+        // plot code instead
+        let cursor_plot_pos = if let Some(screen_pos) = plot_response.response.hover_pos() {
+            let res_pos = plot_response.transform.value_from_position(screen_pos);
+            Some(PlotPoint {
+                x: res_pos.x,
+                y: res_pos.y,
+            }) // offset correction mismatch
+        } else {
+            None
+        };
+
+        self.state.last_cursor_pos = cursor_plot_pos;
+        // println!("{:?}", &self.last_cursor_pos);
     }
+}
 
-    // pub fn show(&mut self, ui: &mut Ui, ctx: &egui::Context) {
-    //     let Some(raster_handler) = &self.raster_handler else {
-    //         return;
-    //     };
-    //     let Some(data_cube) = &mut self.data_cube else {
-    //         return;
-    //     };
+impl TileDescriptor {
+    fn ui_tile_bounds(&self, plot_ui: &mut PlotUi) {
+        let bbox = self.pixel_box();
 
-    //     let mode = self.current_vis_mode();
-    //     // let visible_tiles: Vec<TileId> = data_cube
-    //     //     .tiles_for_view(/* geo view courant, downscaling courant */)
-    //     //     .map(|t| t.id)
-    //     //     .collect();
+        let xmin = bbox.xmin() as f64;
+        let xmax = bbox.xmax() as f64;
+        let ymin = bbox.ymin() as f64;
+        let ymax = bbox.ymax() as f64;
 
-    //     // for tile_id in visible_tiles {
-    //     //     let output =
-    //     //         data_cube.render(&mode, tile_id, &mut self.texture_cache, ctx, raster_handler);
-    //     //     // dispatcher output vers ui.painter().image(...) ou egui_plot::Line
-    //     // }
-    // }
+        let points: PlotPoints =
+            vec![[xmin, ymin], [xmax, ymin], [xmax, ymax], [xmin, ymax]].into();
+
+        let polygon = Polygon::new("tile_bounds", points)
+            .stroke(egui::Stroke::new(1.0, egui::Color32::RED))
+            .fill_color(egui::Color32::TRANSPARENT);
+
+        plot_ui.polygon(polygon);
+    }
 }
 
 // use super::{ReadOptions, TextureWorker, ViewMode, ViewModeWorker};

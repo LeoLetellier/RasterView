@@ -1,4 +1,6 @@
 use egui_plot::PlotPoint;
+use num_traits::NumCast;
+use std::ops::{Div, Sub};
 
 /// Trait for an axis-aligned bounding box (AABB) with four extents.
 ///
@@ -10,7 +12,10 @@ use egui_plot::PlotPoint;
 /// - `center()`: the midpoint of the x/y extents
 /// - `intersection()`: the overlapping region (returns `None` when empty)
 /// - `union()`: the minimal box that contains both inputs
-pub trait Bbox<T>: From<[T; 4]> {
+pub trait Bbox<T>: From<[T; 4]>
+where
+    T: Sub<Output = T> + Div<Output = T> + NumCast + Copy,
+{
     /// Returns the minimum x-boundary of the bounding box.
     ///
     /// In other words, this is the left extent on the x axis.
@@ -37,6 +42,31 @@ pub trait Bbox<T>: From<[T; 4]> {
     /// - x: `(xmin + xmax) / 2`
     /// - y: `(ymin + ymax) / 2`
     fn center(&self) -> PlotPoint;
+
+    /// Returns the width of the bounding box.
+    ///
+    /// Computed as xmax - xmin
+    fn width(&self) -> T {
+        self.xmax() - self.xmin()
+    }
+
+    /// Returns the height of the bounding box
+    ///
+    /// Computed as ymax - ymin
+    fn height(&self) -> T {
+        self.ymax() - self.ymin()
+    }
+
+    /// Returns (width, height) downsampled by `downsample` halvings
+    /// (0 = full res, 1 = half res, 2 = quarter res, ...).
+    ///
+    /// Use that for gdal readband usage
+    fn size_with_downsampling(&self, downsample: usize) -> (T, T) {
+        let factor_usize = 1usize << downsample;
+        let factor: T = NumCast::from(factor_usize).expect("downsample factor should fit in T");
+
+        (self.width() / factor, self.height() / factor)
+    }
 
     /// Returns the intersection of this bounding box with another.
     ///
@@ -86,7 +116,7 @@ fn partial_max<T: PartialOrd>(a: T, b: T) -> T {
 /// An axis-aligned bounding box in pixel coordinates (`usize`).
 ///
 /// The extents are stored in the order `[xmin, xmax, ymin, ymax]`.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Hash, Eq)]
 pub struct PixelBox {
     xmin: usize,
     xmax: usize,
@@ -127,9 +157,6 @@ impl Bbox<usize> for PixelBox {
         self.ymax
     }
 
-    // usize doesn't implement Into<f64> (lossy on 64-bit platforms), so the
-    // default center() impl doesn't type-check. Override with an explicit
-    // (and here, lossless in practice) cast instead.
     fn center(&self) -> PlotPoint {
         let xmin = self.xmin as f64;
         let xmax = self.xmax as f64;
@@ -138,6 +165,33 @@ impl Bbox<usize> for PixelBox {
         PlotPoint::new((xmin + xmax) / 2.0, (ymin + ymax) / 2.0)
     }
 }
+
+// /// Downsample version of a pixelbox
+// ///
+// /// Should only use `.width()` and `.height()` on it for gdal usage
+// type DownPixelBox = PixelBox;
+
+// /// Handle all info needed to fetch and position a tile
+// ///
+// /// need band id, pixelbbox from full size, downsample
+// ///
+// /// viewport is in raster full size
+// struct RawTile {
+//     band: usize,
+//     full_pbox: PixelBox,
+//     downsample: usize,
+// }
+
+// impl RawTile {
+//     pub fn to_downsample_pixelbox(&self) -> DownPixelBox {
+//         let factor = 1usize << self.downsample; // 2^downsample
+
+//         let down_width = self.full_pbox.width() / factor;
+//         let down_height = self.full_pbox.height() / factor;
+
+//         DownPixelBox::from([0, down_width, 0, down_height])
+//     }
+// }
 
 /// An axis-aligned bounding box in geographic/continuous coordinates (`f64`).
 ///

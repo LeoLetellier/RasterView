@@ -1,10 +1,12 @@
 use anyhow::Result;
-use egui::ColorImage;
+use egui::{ColorImage, Rect};
+use egui_plot::{PlotBounds, PlotPoint};
+use std::io::empty;
 use std::path::Path;
 
 use crate::raster::RasterHandler;
 use crate::viewers::coords::GeoBox;
-use crate::viewers::tiler::CacheHandler;
+// use crate::viewers::tiler::CacheHandler;
 
 pub mod cmap;
 pub mod coords;
@@ -27,9 +29,33 @@ pub struct Viewer {
     /// User parameters
     pub view_mode: ViewMode,
     /// Caching
-    pub cache: Option<CacheHandler>,
+    // pub cache: Option<CacheHandler>,
     // Texture
     pub color_image: Option<ColorImage>,
+    pub parameters: ViewerParams,
+    pub state: ViewerState,
+}
+
+#[derive(Debug)]
+pub struct ViewerParams {
+    tile_size: usize,
+    viewport_padding: f64,
+}
+
+impl Default for ViewerParams {
+    fn default() -> Self {
+        ViewerParams {
+            tile_size: 256,
+            viewport_padding: 0.0,
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct ViewerState {
+    pub last_cursor_pos: Option<PlotPoint>,
+    pub last_bounds: Option<PlotBounds>,
+    pub last_screen_size: Option<(f64, f64)>,
 }
 
 impl Viewer {
@@ -48,6 +74,7 @@ impl Viewer {
     }
 
     pub fn refresh_cache(&mut self) -> Result<()> {
+        // reset all caching
         todo!()
     }
 }
@@ -60,8 +87,10 @@ impl Default for Viewer {
             live_bbox,
             downscaling: 0,
             view_mode: Default::default(),
-            cache: None,
+            // cache: None,
             color_image: None,
+            parameters: Default::default(),
+            state: Default::default(),
         }
     }
 }
@@ -98,6 +127,20 @@ impl Default for ViewMode {
             band_alpha: None,
             cpx: CpxView::CompositeAmpPhase,
             color: ColorInterpretation::default(),
+        }
+    }
+}
+
+impl ViewMode {
+    pub fn need_bands(&self) -> Vec<usize> {
+        match &self.active_viewer {
+            ActiveViewer::Panchro | ActiveViewer::Cpx => vec![self.band_1],
+            ActiveViewer::Color if let Some(alpha) = self.band_alpha => {
+                vec![self.band_1, self.band_2, self.band_3, alpha]
+            }
+            ActiveViewer::Color => {
+                vec![self.band_1, self.band_2, self.band_3]
+            }
         }
     }
 }
