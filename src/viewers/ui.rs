@@ -1,3 +1,4 @@
+use crate::raster::RasterHandler;
 use crate::viewers::{Viewer, dummy_checkerboard, dummy_gradient};
 use egui::{Ui, vec2};
 use egui_plot::{Plot, PlotBounds, PlotImage, PlotPoint, PlotUi};
@@ -5,19 +6,28 @@ use egui_plot::{Plot, PlotBounds, PlotImage, PlotPoint, PlotUi};
 impl Viewer {
     pub fn ui(&mut self, ui: &mut Ui) {
         // egui::Panel::right("right panel").show_inside(ui, |_ui| {});
+        // let color_image = if let Some(rh) = &self.raster_handler {
+        //     rh.to_colorimage_direct_par(1).ok()
+        // } else {
+        //     None
+        // };
 
-        let width = 256;
-        let height = 256;
-        let raw = dummy_checkerboard(width, height, 16);
-        let raw = dummy_gradient(width, height);
+        // let width = 256;
+        // let height = 256;
+        // let raw = dummy_checkerboard(width, height, 16);
+        // let raw = dummy_gradient(width, height);
 
-        let color_image = egui::ColorImage::from_rgba_unmultiplied([width, height], &raw);
+        // let color_image = egui::ColorImage::from_rgba_unmultiplied([width, height], &raw);
 
-        let handle = ui.load_texture(
-            "dummy_checkerboard",
-            color_image,
-            egui::TextureOptions::default(),
-        );
+        let handle = if let Some(ci) = &self.color_image {
+            Some(ui.load_texture(
+                "dummy_checkerboard",
+                ci.clone(),
+                egui::TextureOptions::default(),
+            ))
+        } else {
+            None
+        };
 
         Plot::new("main_plot")
             .data_aspect(1.0)
@@ -26,12 +36,14 @@ impl Viewer {
             .allow_scroll(false)
             .allow_zoom(true)
             .show(ui, |plot_ui| {
-                plot_ui.image(PlotImage::new(
-                    "raster",
-                    handle.id(),
-                    PlotPoint::new(128.0, 128.0),
-                    vec2(256.0, 256.0),
-                ));
+                if let Some(h) = handle {
+                    plot_ui.image(PlotImage::new(
+                        "raster",
+                        h.id(),
+                        PlotPoint::new(128.0, 128.0),
+                        vec2(256.0, 256.0),
+                    ))
+                };
             });
     }
 

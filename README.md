@@ -10,12 +10,9 @@
 
 ## ✨ Features
 
-* [GMT colormaps (LGPL-3.0)](./resources/colormaps/README.md), including the [scientific color maps](https://doi.org/10.5281/zenodo.8409685).
-
 ### Available
 
 ### TODO
-
 
 ## 🔧 Installation
 

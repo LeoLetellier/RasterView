@@ -29,7 +29,7 @@ pub struct Viewer {
     /// Caching
     pub cache: Option<CacheHandler>,
     // Texture
-    pub texture: Option<ColorImage>,
+    pub color_image: Option<ColorImage>,
 }
 
 impl Viewer {
@@ -37,6 +37,12 @@ impl Viewer {
         let mut viewer = Self::default();
         let raster_handler = RasterHandler::new(path)?;
         viewer.raster_handler = Some(raster_handler);
+
+        viewer.color_image = if let Some(rh) = &viewer.raster_handler {
+            rh.to_colorimage_direct_par(1).ok()
+        } else {
+            None
+        };
 
         Ok(viewer)
     }
@@ -55,7 +61,7 @@ impl Default for Viewer {
             downscaling: 0,
             view_mode: Default::default(),
             cache: None,
-            texture: None,
+            color_image: None,
         }
     }
 }
