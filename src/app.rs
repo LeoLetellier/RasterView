@@ -3,10 +3,13 @@ use crate::raster::RasterHandler;
 use crate::viewers::Viewer;
 use anyhow::{Result, bail};
 use egui::Color32;
+use egui::Label;
+use egui::Layout;
 use egui::RichText;
 use egui::TextureHandle;
 use egui::Ui;
-// use egui_phosphor as icon;
+use egui::widget_text::WidgetText;
+use egui_phosphor as icon;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -14,37 +17,63 @@ pub struct RasterView {
     raster_path: Option<PathBuf>,
     viewer: Option<Viewer>,
     // texture_worker: TextureWorker,
+    left_panel_open: bool,
     left_panel: LeftPanel,
+    right_panel_open: bool,
     right_panel: RightPanel,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum LeftPanel {
     Metadata,
-    Closed,
 }
 
-#[derive(Debug, PartialEq)]
+trait Panel: PartialEq {
+    fn symbol(&self) -> RichText;
+    fn symbol_highlight(&self) -> RichText;
+}
+
+impl Panel for LeftPanel {
+    fn symbol(&self) -> RichText {
+        RichText::new(icon::regular::ARTICLE_MEDIUM)
+    }
+
+    fn symbol_highlight(&self) -> RichText {
+        RichText::new(icon::fill::ARTICLE_MEDIUM).color(Color32::from_rgb(30, 144, 255))
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum RightPanel {
     Palette,
-    Closed,
+}
+
+impl Panel for RightPanel {
+    fn symbol(&self) -> RichText {
+        RichText::new(icon::regular::PAINT_BRUSH_HOUSEHOLD)
+    }
+
+    fn symbol_highlight(&self) -> RichText {
+        RichText::new(icon::fill::PAINT_BRUSH_HOUSEHOLD).color(Color32::from_rgb(30, 144, 255))
+    }
 }
 
 impl RasterView {
     pub fn new(ctx: egui::Context) -> Self {
         // let texture_worker = TextureWorker::new(ctx);
 
-        // waiting for phosphoricon for egui 0.35
-        // let mut fonts = egui::FontDefinitions::default();
-        // icon::add_to_fonts(&mut fonts, icon::Variant::Regular);
-        // icon::add_to_fonts(&mut fonts, icon::Variant::Fill);
-        // ctx.set_fonts(fonts);
+        let mut fonts = egui::FontDefinitions::default();
+        icon::add_to_fonts(&mut fonts, icon::Variant::Regular);
+        icon::add_to_fonts(&mut fonts, icon::Variant::Fill);
+        ctx.set_fonts(fonts);
 
         Self {
             raster_path: Default::default(),
             viewer: Default::default(),
             // texture_worker,
+            left_panel_open: true,
             left_panel: LeftPanel::Metadata,
+            right_panel_open: true,
             right_panel: RightPanel::Palette,
         }
     }
@@ -139,79 +168,25 @@ impl RasterView {
             .num_columns(3)
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    let left_panel_metadata_symbol = if self.left_panel != LeftPanel::Metadata {
-                        RichText::new("M")
-                        // RichText::new(icon::regular::ARTICLE_MEDIUM)
-                    } else {
-                        RichText::new("M").color(Color32::from_rgb(30, 144, 255))
-                        // RichText::new(icon::fill::ARTICLE_MEDIUM)
-                        //     .color(Color32::from_rgb(30, 144, 255))
-                    };
-                    ui.scope(|ui| {
-                        ui.style_mut().spacing.button_padding = egui::vec2(0.0, 0.0);
-
-                        ui.visuals_mut().widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
-                        ui.visuals_mut().widgets.hovered.bg_fill = egui::Color32::TRANSPARENT;
-                        ui.visuals_mut().widgets.active.bg_fill = egui::Color32::TRANSPARENT;
-
-                        let btn = ui
-                            .add(
-                                egui::Button::new(left_panel_metadata_symbol)
-                                    .frame(false)
-                                    .min_size(egui::Vec2::ZERO),
-                            )
-                            .on_hover_text("Toggle metadata panel");
-                        let btn = if self.left_panel == LeftPanel::Metadata {
-                            btn.highlight()
-                        } else {
-                            btn
-                        };
-                        if btn.clicked() {
-                            match self.left_panel {
-                                LeftPanel::Metadata => self.left_panel = LeftPanel::Closed,
-                                _ => self.left_panel = LeftPanel::Metadata,
-                            }
-                        }
-                    });
+                    panel_button(
+                        &mut self.left_panel_open,
+                        &mut self.left_panel,
+                        LeftPanel::Metadata,
+                        ui,
+                        "Toggle metadata panel",
+                    );
                 });
 
                 ui.horizontal_centered(|ui| {});
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let right_panel_metadata_symbol = if self.right_panel != RightPanel::Palette {
-                        RichText::new("P")
-                        // RichText::new(icon::regular::PAINT_BRUSH_HOUSEHOLD)
-                    } else {
-                        RichText::new("P").color(Color32::from_rgb(30, 144, 255))
-                        // RichText::new(icon::fill::PAINT_BRUSH_HOUSEHOLD)
-                        //     .color(Color32::from_rgb(30, 144, 255))
-                    };
-                    ui.scope(|ui| {
-                        ui.style_mut().spacing.button_padding = egui::vec2(0.0, 0.0);
-
-                        ui.visuals_mut().widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
-                        ui.visuals_mut().widgets.hovered.bg_fill = egui::Color32::TRANSPARENT;
-                        ui.visuals_mut().widgets.active.bg_fill = egui::Color32::TRANSPARENT;
-
-                        let btn = ui
-                            .add(
-                                egui::Button::new(right_panel_metadata_symbol)
-                                    .frame(false)
-                                    .min_size(egui::Vec2::ZERO),
-                            )
-                            .on_hover_text("Toggle palette panel");
-                        let btn = if self.right_panel == RightPanel::Palette {
-                            btn.highlight()
-                        } else {
-                            btn
-                        };
-                        if btn.clicked() {
-                            match self.right_panel {
-                                RightPanel::Palette => self.right_panel = RightPanel::Closed,
-                                _ => self.right_panel = RightPanel::Palette,
-                            }
-                        }
-                    });
+                    panel_button(
+                        &mut self.right_panel_open,
+                        &mut self.right_panel,
+                        RightPanel::Palette,
+                        ui,
+                        "Toggle palette panel",
+                    );
 
                     if cfg!(debug_assertions) {
                         let ms = ui.ctx().input(|i| i.unstable_dt * 1000.0);
@@ -239,66 +214,6 @@ impl RasterView {
                     }
                 });
             });
-        // ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-        //     let left_panel_metadata_symbol = if self.left_panel != LeftPanel::Metadata {
-        //         RichText::new(icon::regular::ARTICLE_MEDIUM)
-        //     } else {
-        //         RichText::new(icon::fill::ARTICLE_MEDIUM).color(Color32::from_rgb(30, 144, 255))
-        //     };
-        //     ui.scope(|ui| {
-        //         ui.style_mut().spacing.button_padding = egui::vec2(0.0, 0.0);
-
-        //         ui.visuals_mut().widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
-        //         ui.visuals_mut().widgets.hovered.bg_fill = egui::Color32::TRANSPARENT;
-        //         ui.visuals_mut().widgets.active.bg_fill = egui::Color32::TRANSPARENT;
-
-        //         let btn = ui
-        //             .add(
-        //                 egui::Button::new(left_panel_metadata_symbol)
-        //                     .frame(false)
-        //                     .min_size(egui::Vec2::ZERO),
-        //             )
-        //             .on_hover_text("Toggle metadata panel");
-        //         let btn = if self.left_panel == LeftPanel::Metadata {
-        //             btn.highlight()
-        //         } else {
-        //             btn
-        //         };
-        //         if btn.clicked() {
-        //             match self.left_panel {
-        //                 LeftPanel::Metadata => self.left_panel = LeftPanel::Closed,
-        //                 _ => self.left_panel = LeftPanel::Metadata,
-        //             }
-        //         }
-        //     });
-
-        //     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        //         if let Some(view) = &self.viewer {
-        //             if let Some(px_pos) = view.last_cursor_pos {
-        //                 if let Some(gt) = view
-        //                     .raster_handler
-        //                     .as_ref()
-        //                     .map(|r| r.get_pixel_geotransform())
-        //                     .flatten()
-        //                 {
-        //                     let geo_pos = gt.pixel_to_geo(px_pos.x, px_pos.y);
-        //                     ui.label(format!(" | geo: ({:.3},{:.3})", geo_pos.0, geo_pos.1));
-        //                 }
-        //                 ui.label(format!("px: ({:.0},{:.0})", px_pos.x, px_pos.y));
-        //                 ui.end_row();
-        //             }
-        //         }
-        //     });
-
-        //     if cfg!(debug_assertions) {
-        //         let ms = ui.ctx().input(|i| i.unstable_dt * 1000.0);
-
-        //         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        //             egui::warn_if_debug_build(ui);
-        //             ui.label(format!("{ms:.1} ms"));
-        //         });
-        //     }
-        // });
     }
 
     fn ui_top_panel(&mut self, ui: &mut Ui) {
@@ -339,10 +254,56 @@ impl RasterView {
 
     fn ui_right_panel(&mut self, ui: &mut Ui) {
         match &self.right_panel {
-            RightPanel::Palette => {}
-            RightPanel::Closed => {}
+            RightPanel::Palette => {
+                ui.with_layout(
+                    Layout::centered_and_justified(egui::Direction::LeftToRight),
+                    |ui| ui.add(Label::new("This is empty! For now...").wrap()),
+                );
+            }
+            _ => (),
         }
     }
+}
+
+/// Create a button linked to a panel state, switching between panels or toggling the panel visibility
+fn panel_button<P: Panel>(
+    is_open: &mut bool,
+    current_panel: &mut P,
+    panel: P,
+    ui: &mut Ui,
+    on_hover: impl Into<WidgetText>,
+) {
+    let panel_selected = *current_panel == panel;
+    let highlight = panel_selected & *is_open;
+    let panel_symbol = if highlight {
+        panel.symbol_highlight()
+    } else {
+        panel.symbol()
+    };
+
+    ui.scope(|ui| {
+        ui.style_mut().spacing.button_padding = egui::vec2(0.0, 0.0);
+
+        ui.visuals_mut().widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
+        ui.visuals_mut().widgets.hovered.bg_fill = egui::Color32::TRANSPARENT;
+        ui.visuals_mut().widgets.active.bg_fill = egui::Color32::TRANSPARENT;
+
+        let btn = ui
+            .add(
+                egui::Button::new(panel_symbol)
+                    .frame(false)
+                    .min_size(egui::Vec2::ZERO),
+            )
+            .on_hover_text(on_hover);
+        let btn = if highlight { btn.highlight() } else { btn };
+        if btn.clicked() {
+            if panel_selected {
+                *is_open = !*is_open;
+            } else {
+                *current_panel = panel;
+            }
+        }
+    });
 }
 
 impl eframe::App for RasterView {
@@ -363,26 +324,16 @@ impl eframe::App for RasterView {
             self.ui_bottom_panel(ui);
         });
 
-        let mut is_open = !(self.left_panel == LeftPanel::Closed);
+        let mut is_open = self.left_panel_open;
         egui::Panel::left("left panel")
-            .resizable(is_open)
-            .size_range(if is_open {
-                100.0..=ui.ctx().content_rect().width() * 0.33
-            } else {
-                0.0..=0.0
-            })
+            .max_size(ui.ctx().content_rect().width() * 0.33)
             .show_collapsible(ui, &mut is_open, |ui| {
                 self.ui_left_panel(ui);
             });
 
-        let mut is_open = !(self.right_panel == RightPanel::Closed);
+        let mut is_open = self.right_panel_open;
         egui::Panel::right("right panel")
-            .resizable(is_open)
-            .size_range(if is_open {
-                100.0..=ui.ctx().content_rect().width() * 0.33
-            } else {
-                0.0..=0.0
-            })
+            .max_size(ui.ctx().content_rect().width() * 0.33)
             .show_collapsible(ui, &mut is_open, |ui| {
                 self.ui_right_panel(ui);
             });
