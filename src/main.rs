@@ -14,6 +14,9 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "RasterView",
         native_options,
-        Box::new(|cc| Ok(Box::new(app::RasterView::new(cc.egui_ctx.clone())))), // Gets egui context reference
+        Box::new(|cc| {
+            crate::app::setup_custom_style(&cc.egui_ctx);
+            Ok(Box::new(app::RasterView::new(cc.egui_ctx.clone())))
+        }), // Gets egui context reference
     )
 }

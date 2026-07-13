@@ -6,7 +6,7 @@ use egui::Color32;
 use egui::RichText;
 use egui::TextureHandle;
 use egui::Ui;
-use egui_phosphor as icon;
+// use egui_phosphor as icon;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -34,10 +34,11 @@ impl RasterView {
     pub fn new(ctx: egui::Context) -> Self {
         // let texture_worker = TextureWorker::new(ctx);
 
-        let mut fonts = egui::FontDefinitions::default();
-        icon::add_to_fonts(&mut fonts, icon::Variant::Regular);
-        icon::add_to_fonts(&mut fonts, icon::Variant::Fill);
-        ctx.set_fonts(fonts);
+        // waiting for phosphoricon for egui 0.35
+        // let mut fonts = egui::FontDefinitions::default();
+        // icon::add_to_fonts(&mut fonts, icon::Variant::Regular);
+        // icon::add_to_fonts(&mut fonts, icon::Variant::Fill);
+        // ctx.set_fonts(fonts);
 
         Self {
             raster_path: Default::default(),
@@ -139,10 +140,12 @@ impl RasterView {
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     let left_panel_metadata_symbol = if self.left_panel != LeftPanel::Metadata {
-                        RichText::new(icon::regular::ARTICLE_MEDIUM)
+                        RichText::new("M")
+                        // RichText::new(icon::regular::ARTICLE_MEDIUM)
                     } else {
-                        RichText::new(icon::fill::ARTICLE_MEDIUM)
-                            .color(Color32::from_rgb(30, 144, 255))
+                        RichText::new("M").color(Color32::from_rgb(30, 144, 255))
+                        // RichText::new(icon::fill::ARTICLE_MEDIUM)
+                        //     .color(Color32::from_rgb(30, 144, 255))
                     };
                     ui.scope(|ui| {
                         ui.style_mut().spacing.button_padding = egui::vec2(0.0, 0.0);
@@ -176,10 +179,12 @@ impl RasterView {
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let right_panel_metadata_symbol = if self.right_panel != RightPanel::Palette {
-                        RichText::new(icon::regular::PAINT_BRUSH_HOUSEHOLD)
+                        RichText::new("P")
+                        // RichText::new(icon::regular::PAINT_BRUSH_HOUSEHOLD)
                     } else {
-                        RichText::new(icon::fill::PAINT_BRUSH_HOUSEHOLD)
-                            .color(Color32::from_rgb(30, 144, 255))
+                        RichText::new("P").color(Color32::from_rgb(30, 144, 255))
+                        // RichText::new(icon::fill::PAINT_BRUSH_HOUSEHOLD)
+                        //     .color(Color32::from_rgb(30, 144, 255))
                     };
                     ui.scope(|ui| {
                         ui.style_mut().spacing.button_padding = egui::vec2(0.0, 0.0);
@@ -350,15 +355,15 @@ impl eframe::App for RasterView {
             }
         });
 
-        egui::Panel::top("top panel").show_inside(ui, |ui| {
+        egui::Panel::top("top panel").show(ui, |ui| {
             self.ui_top_panel(ui);
         });
 
-        egui::Panel::bottom("bottom panel").show_inside(ui, |ui| {
+        egui::Panel::bottom("bottom panel").show(ui, |ui| {
             self.ui_bottom_panel(ui);
         });
 
-        let is_open = !(self.left_panel == LeftPanel::Closed);
+        let mut is_open = !(self.left_panel == LeftPanel::Closed);
         egui::Panel::left("left panel")
             .resizable(is_open)
             .size_range(if is_open {
@@ -366,11 +371,11 @@ impl eframe::App for RasterView {
             } else {
                 0.0..=0.0
             })
-            .show_animated_inside(ui, is_open, |ui| {
+            .show_collapsible(ui, &mut is_open, |ui| {
                 self.ui_left_panel(ui);
             });
 
-        let is_open = !(self.right_panel == RightPanel::Closed);
+        let mut is_open = !(self.right_panel == RightPanel::Closed);
         egui::Panel::right("right panel")
             .resizable(is_open)
             .size_range(if is_open {
@@ -378,14 +383,96 @@ impl eframe::App for RasterView {
             } else {
                 0.0..=0.0
             })
-            .show_animated_inside(ui, is_open, |ui| {
+            .show_collapsible(ui, &mut is_open, |ui| {
                 self.ui_right_panel(ui);
             });
 
-        egui::CentralPanel::default().show_inside(ui, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
             if let Some(view) = &mut self.viewer {
                 view.ui(ui);
             }
         });
     }
+}
+
+pub fn setup_custom_style(ctx: &egui::Context) {
+    configure_fonts(ctx);
+    configure_text_styles(ctx);
+    // configure_visuals(ctx);
+}
+
+fn configure_fonts(ctx: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+
+    fonts.font_data.insert(
+        "GeistRegular".to_owned(),
+        egui::FontData::from_static(include_bytes!("../resources/fonts/Geist-Regular.ttf")).into(),
+    );
+
+    fonts
+        .families
+        .entry(egui::FontFamily::Proportional)
+        .or_default()
+        .insert(0, "GeistRegular".to_owned());
+
+    ctx.set_fonts(fonts);
+}
+
+fn configure_text_styles(ctx: &egui::Context) {
+    use egui::FontFamily::Proportional;
+    use egui::FontId;
+    use egui::TextStyle::*;
+    use std::collections::BTreeMap;
+
+    let text_styles: BTreeMap<_, _> = [
+        (Heading, FontId::new(22.0, Proportional)),
+        (Name("Subheading".into()), FontId::new(16.0, Proportional)),
+        (Body, FontId::new(14.0, Proportional)),
+        (Monospace, FontId::new(13.0, egui::FontFamily::Monospace)),
+        (Button, FontId::new(14.0, Proportional)),
+        (Small, FontId::new(10.0, Proportional)),
+    ]
+    .into();
+
+    ctx.all_styles_mut(move |style| style.text_styles = text_styles.clone());
+}
+
+fn configure_visuals(ctx: &egui::Context) {
+    ctx.all_styles_mut(|style| {
+        // Spacing [https://docs.rs/egui/latest/src/egui/style.rs.html#1446-1471]
+        style.spacing.item_spacing = egui::vec2(10.0, 5.0); // 8.0 3.0
+        style.spacing.button_padding = egui::vec2(6.0, 2.0); // 4.0 1.0
+        style.spacing.window_margin = egui::Margin::same(8); // 6
+        style.spacing.menu_margin = egui::Margin::same(8); // 6
+        style.spacing.indent = 20.0; // 18.0
+        style.spacing.scroll.bar_width = 8.0; // 6.0 [https://docs.rs/egui/latest/src/egui/style.rs.html#581-585]
+
+        // Rounded corners
+        let radius = egui::CornerRadius::same(4);
+        style.visuals.window_corner_radius = radius;
+        style.visuals.menu_corner_radius = radius;
+        style.visuals.widgets.noninteractive.corner_radius = radius;
+        style.visuals.widgets.inactive.corner_radius = radius;
+        style.visuals.widgets.hovered.corner_radius = radius;
+        style.visuals.widgets.active.corner_radius = radius;
+        style.visuals.widgets.open.corner_radius = radius;
+
+        // Color accents
+        // style.visuals.selection.bg_fill = egui::Color32::from_rgb(0x3D, 0x7E, 0xFF);
+        // style.visuals.hyperlink_color = egui::Color32::from_rgb(0x5B, 0x9D, 0xFF);
+        // style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(0x3A, 0x3A, 0x40);
+        // style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(0x3D, 0x7E, 0xFF);
+
+        // Shadows on windows/popups
+        // style.visuals.window_shadow = egui::epaint::Shadow {
+        //     offset: [0, 6],
+        //     blur: 18,
+        //     spread: 0,
+        //     color: egui::Color32::from_black_alpha(90),
+        // };
+        // style.visuals.popup_shadow = style.visuals.window_shadow;
+
+        // Slightly faster hover/click feedback
+        // style.animation_time = 0.12;
+    });
 }

@@ -14,19 +14,19 @@ keywords = ["raster", "viewer", "gdal"]
 build = "build.rs"
 
 [dependencies]
-anyhow = "1.0.102"
+anyhow = "1.0.103"
 clap = "4.6.1"
 crossbeam = "0.8.4"
-eframe = "0.34.2"
-egui = "0.34.2"
-egui-phosphor = { version = "0.12.0", features = ["bold", "fill", "light", "thin"] }
-egui_extras = "0.34.2"
-egui_plot = "0.35.0"
-env_logger = "0.11.10"
+eframe = "0.35.0"
+egui = "0.35.0"
+# egui-phosphor = { git = "https://github.com/xangelix/egui-notify/tree/egui-0.35", features = ["bold", "fill", "light", "thin"] }
+egui_extras = "0.35.0"
+egui_plot = "0.36.0"
+env_logger = "0.11.11"
 gdal = { version = "0.19.0", features = ["ndarray"] }
 gdal-sys = "0.12.0"
 geo = "0.33.1"
-log = "0.4.29"
+log = "0.4.33"
 ndarray = { version = "0.17.2", features = ["rayon"] }
 num-traits = "0.2.19"
 quick_cache = "0.7.0"
