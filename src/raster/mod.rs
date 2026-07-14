@@ -69,6 +69,8 @@ pub struct BandMetadata {
     scale: Option<f64>,
     offset: Option<f64>,
     overviews: Vec<[usize; 3]>,
+    // TODO min/max
+    // TODO stats
 }
 
 impl BandMetadata {
@@ -305,17 +307,25 @@ impl RasterHandler {
         ui: &mut egui::Ui,
     ) -> Result<Tile> {
         let raster_band = self.rasterband(tile_descriptor.band)?;
+        let raster_size = self.raster_size();
 
         let pixel_bbox = &tile_descriptor.pixel_bbox;
         let downsampling = tile_descriptor.downsampling;
 
         // Full-resolution window into the raster we want to read
-        let offset = (pixel_bbox.xmin(), pixel_bbox.ymin());
+        // let offset = (pixel_bbox.xmin(), pixel_bbox.ymin());
+        let offset = (pixel_bbox.xmin(), raster_size.1 - pixel_bbox.ymax());
         let window_size = (pixel_bbox.width(), pixel_bbox.height());
 
         // Output buffer size after downsampling — GDAL will decimate/resample
         // while reading when this is smaller than window_size.
         let (out_width, out_height) = pixel_bbox.size_with_downsampling(downsampling);
+
+        // println!("raster size: {} {}", raster_size.0, raster_size.1);
+        // println!("tile size: {} {}", window_size.0, window_size.1);
+        // println!("offset: {} {}", offset.0, offset.1);
+        // println!("downsample size: {} {}", out_width, out_height);
+        // println!("proposition: {}", raster_size.1 - pixel_bbox.ymax());
 
         let array = raster_band.read_as::<f32>(
             (offset.0 as isize, offset.1 as isize),

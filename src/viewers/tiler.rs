@@ -192,6 +192,7 @@ impl Viewer {
         let new_color_images = cached_tiles.into_iter().chain(new_tiles).collect();
         self.color_images = new_color_images;
         println!("Tiles loaded: {}", self.color_images.len());
+        println!("{:?}", self.color_images);
         Ok(&self.color_images)
     }
 }
