@@ -1,11 +1,12 @@
 use anyhow::Result;
-use egui::{ColorImage, Rect};
+use egui::ColorImage;
 use egui_plot::{PlotBounds, PlotPoint};
-use std::io::empty;
 use std::path::Path;
+use std::sync::Arc;
 
 use crate::raster::RasterHandler;
 use crate::viewers::coords::GeoBox;
+use crate::viewers::tiler::Tile;
 // use crate::viewers::tiler::CacheHandler;
 
 pub mod cmap;
@@ -31,7 +32,10 @@ pub struct Viewer {
     /// Caching
     // pub cache: Option<CacheHandler>,
     // Texture
-    pub color_image: Option<ColorImage>,
+    // pub color_image: Option<ColorImage>,
+
+    // TODO change vec to LRU eviction cache
+    pub color_images: Vec<Tile>,
     pub parameters: ViewerParams,
     pub state: ViewerState,
 }
@@ -64,11 +68,11 @@ impl Viewer {
         let raster_handler = RasterHandler::new(path)?;
         viewer.raster_handler = Some(raster_handler);
 
-        viewer.color_image = if let Some(rh) = &viewer.raster_handler {
-            rh.to_colorimage_direct_par(1).ok()
-        } else {
-            None
-        };
+        // viewer.color_image = if let Some(rh) = &viewer.raster_handler {
+        //     rh.to_colorimage_direct_par(1).ok()
+        // } else {
+        //     None
+        // };
 
         Ok(viewer)
     }
@@ -88,7 +92,8 @@ impl Default for Viewer {
             downscaling: 0,
             view_mode: Default::default(),
             // cache: None,
-            color_image: None,
+            // color_image: None,
+            color_images: Default::default(),
             parameters: Default::default(),
             state: Default::default(),
         }

@@ -3,17 +3,15 @@ use crate::viewers::coords::{Bbox, GeoBox, PixelBox};
 use crate::viewers::{ActiveViewer, ViewMode, Viewer};
 
 use anyhow::{Result, anyhow};
-use egui::{ColorImage, TextureHandle};
-use egui_plot::PlotBounds;
-use gdal::Dataset;
-use gdal::raster::Buffer;
+use egui::{ColorImage, TextureHandle, vec2};
+use egui_plot::{PlotImage, PlotUi};
 use quick_cache::sync::Cache;
 use quick_cache::{
     Weighter,
     sync::{EntryAction, EntryResult},
 };
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::HashSet;
 use std::fmt;
 use std::hash::Hash;
 use std::sync::Arc;
@@ -147,25 +145,110 @@ impl Viewer {
 
         Some(visible)
     }
+
+    pub fn refresh_tiles(
+        &mut self,
+        tile_descriptions: &Vec<TileDescriptor>,
+        ui: &mut egui::Ui,
+    ) -> Result<&Vec<Tile>> {
+        let requested: HashSet<&TileDescriptor> = tile_descriptions.iter().collect();
+
+        // Find image colors already in cache
+        let cached_tiles: Vec<Tile> = self
+            .color_images
+            .iter()
+            .filter(|t| requested.contains(&t.tile_descriptor))
+            .cloned()
+            .collect();
+        let found: HashSet<&TileDescriptor> =
+            cached_tiles.iter().map(|t| &t.tile_descriptor).collect();
+
+        // Figure out which requested descriptors weren't in the cache
+        let missing_descriptions: Vec<TileDescriptor> = tile_descriptions
+            .iter()
+            .filter(|desc| !found.contains(*desc))
+            .cloned()
+            .collect();
+
+        // Else load them, one at a time (each call is internally parallel)
+        let new_tiles: Vec<Tile> = if missing_descriptions.is_empty() {
+            Vec::new()
+        } else {
+            let raster_handler = self
+                .raster_handler
+                .as_ref()
+                .ok_or_else(|| anyhow!("no raster loaded"))?;
+
+            missing_descriptions
+                .into_iter()
+                .map(|td| raster_handler.tile_to_texture_direct_par(td, ui))
+                .collect::<Result<Vec<Tile>>>()?
+        };
+
+        // Merge newly loaded tiles into the cache
+        self.color_images.extend(new_tiles.iter().cloned());
+
+        // Combine cache hits and newly loaded tiles (order not preserved)
+        let new_color_images = cached_tiles.into_iter().chain(new_tiles).collect();
+        self.color_images = new_color_images;
+        println!("Tiles loaded: {}", self.color_images.len());
+        Ok(&self.color_images)
+    }
 }
 
 #[derive(Debug, PartialEq, Hash, Eq, Clone)]
 pub struct TileDescriptor {
-    pixel_bbox: PixelBox,
-    band: usize,
-    downsampling: usize,
+    pub pixel_bbox: PixelBox,
+    pub band: usize,
+    pub downsampling: usize,
 }
 
 impl TileDescriptor {
     pub fn pixel_box(&self) -> &PixelBox {
         &self.pixel_bbox
     }
+
+    pub fn name(&self) -> String {
+        format!(
+            "b{}_s{}_x{}_xx{}_y{}_yy{}",
+            self.band,
+            self.downsampling,
+            self.pixel_bbox.xmin(),
+            self.pixel_bbox.xmax(),
+            self.pixel_bbox.ymin(),
+            self.pixel_bbox.ymax()
+        )
+    }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Tile {
-    tile_descriptor: TileDescriptor,
-    image_cache: Arc<ColorImage>,
+    pub tile_descriptor: TileDescriptor,
+    pub texture: TextureHandle,
+}
+
+impl fmt::Debug for Tile {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Tile")
+            .field("tile_descriptor", &self.tile_descriptor)
+            // .field("texture", &self.texture)
+            .finish()
+    }
+}
+
+impl Tile {
+    pub fn plot_ui(&self, plot_ui: &mut PlotUi) {
+        let tile_name = self.tile_descriptor.name();
+        plot_ui.image(PlotImage::new(
+            format!("plot_tile_{tile_name}"),
+            self.texture.id(),
+            self.tile_descriptor.pixel_bbox.center(),
+            vec2(
+                self.tile_descriptor.pixel_bbox.width() as f32,
+                self.tile_descriptor.pixel_bbox.height() as f32,
+            ),
+        ));
+    }
 }
 
 #[derive(Clone)]
@@ -184,35 +267,35 @@ impl Weighter<TileDescriptor, Arc<ColorImage>> for TileWeighter {
 /// ```
 pub type ImageCache = Cache<TileDescriptor, Arc<ColorImage>, TileWeighter>;
 
-pub fn fetch_cache_tile(
-    raster_handler: &RasterHandler,
-    cache: &Cache<TileDescriptor, Arc<ColorImage>, TileWeighter>,
-    tile: TileDescriptor,
-) -> Result<Tile> {
-    let result = cache.entry(&tile, None, |_key, val| EntryAction::Retain(val.clone()));
-    let TileDescriptor {
-        pixel_bbox,
-        band,
-        downsampling,
-    } = tile;
-    match result {
-        EntryResult::Retained(img) => Ok(Tile {
-            tile_descriptor: tile,
-            image_cache: img,
-        }),
-        EntryResult::Vacant(guard) => {
-            let img = Arc::new(raster_handler.to_colorimage_direct_par(band)?);
-            let _ = guard.insert(img.clone());
-            Ok(Tile {
-                tile_descriptor: tile,
-                image_cache: img,
-            })
-        }
-        _ => Err(anyhow!(
-            "tile cache unreachable: neither retained nor vacant"
-        )),
-    }
-}
+// pub fn fetch_cache_tile(
+//     raster_handler: &RasterHandler,
+//     cache: &Cache<TileDescriptor, Arc<ColorImage>, TileWeighter>,
+//     tile: TileDescriptor,
+// ) -> Result<Tile> {
+//     let result = cache.entry(&tile, None, |_key, val| EntryAction::Retain(val.clone()));
+//     let TileDescriptor {
+//         pixel_bbox,
+//         band,
+//         downsampling,
+//     } = tile;
+//     match result {
+//         EntryResult::Retained(img) => Ok(Tile {
+//             tile_descriptor: tile,
+//             texture: img,
+//         }),
+//         EntryResult::Vacant(guard) => {
+//             let img = Arc::new(raster_handler.to_colorimage_direct_par(band)?);
+//             let _ = guard.insert(img.clone());
+//             Ok(Tile {
+//                 tile_descriptor: tile,
+//                 texture: img,
+//             })
+//         }
+//         _ => Err(anyhow!(
+//             "tile cache unreachable: neither retained nor vacant"
+//         )),
+//     }
+// }
 
 /////////////////////////////////////////////
 

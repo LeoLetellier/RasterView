@@ -22,23 +22,29 @@ impl Viewer {
         // let color_image = egui::ColorImage::from_rgba_unmultiplied([width, height], &raw);
 
         let tiles_needed = self.need_tiles();
+        let tiles = tiles_needed
+            .clone()
+            .map(|tn| self.refresh_tiles(&tn, ui).ok())
+            .flatten();
         // println!("{:?}", tiles_needed);
 
-        let handle = if let Some(ci) = &self.color_image {
-            Some((
-                ui.load_texture(
-                    "dummy_checkerboard",
-                    ci.clone(),
-                    egui::TextureOptions::NEAREST,
-                ),
-                ci.width(),
-                ci.height(),
-            ))
-        } else {
-            None
-        };
+        // let handle = if let Some(ci) = &self.color_image {
+        //     Some((
+        //         ui.load_texture(
+        //             "dummy_checkerboard",
+        //             ci.clone(),
+        //             egui::TextureOptions::NEAREST,
+        //         ),
+        //         ci.width(),
+        //         ci.height(),
+        //     ))
+        // } else {
+        //     None
+        // };
 
         let ppp = ui.ctx().pixels_per_point() as f64;
+        let mut last_bounds = None;
+        let mut last_screen_size = None;
 
         let plot_response = Plot::new("main_plot")
             .data_aspect(1.0)
@@ -48,27 +54,18 @@ impl Viewer {
             .allow_zoom(true)
             .show_grid(false)
             .show(ui, |plot_ui| {
-                let last_screen_size = plot_ui.response().rect;
-                self.state.last_screen_size = Some((
-                    last_screen_size.width() as f64 * ppp,
-                    last_screen_size.height() as f64 * ppp,
-                ));
+                let rect = plot_ui.response().rect;
+                last_screen_size = Some((rect.width() as f64 * ppp, rect.height() as f64 * ppp));
+                last_bounds = Some(plot_ui.plot_bounds());
 
-                self.state.last_bounds = Some(plot_ui.plot_bounds());
-
-                if let Some((h, width, height)) = handle {
-                    plot_ui.image(PlotImage::new(
-                        "raster",
-                        h.id(),
-                        PlotPoint::new(width as f64 / 2.0, height as f64 / 2.0),
-                        vec2(width as f32, height as f32),
-                    ))
-                };
-
+                tiles.map(|ot| ot.iter().for_each(|t| t.plot_ui(plot_ui)));
                 if let Some(tiles) = tiles_needed {
                     tiles.iter().for_each(|t| t.ui_tile_bounds(plot_ui));
                 }
             });
+
+        self.state.last_screen_size = last_screen_size;
+        self.state.last_bounds = last_bounds;
 
         // With this it is None when cursor is outside the plot
         //

@@ -124,6 +124,31 @@ pub struct PixelBox {
     ymax: usize,
 }
 
+impl PixelBox {
+    fn new(xmin: usize, xmax: usize, ymin: usize, ymax: usize) -> Option<Self> {
+        if xmin == xmax || ymin == ymax {
+            return None;
+        }
+
+        let (mut xmin, mut xmax) = (xmin, xmax);
+        let (mut ymin, mut ymax) = (ymin, ymax);
+
+        if xmin > xmax {
+            std::mem::swap(&mut xmin, &mut xmax);
+        }
+        if ymin > ymax {
+            std::mem::swap(&mut ymin, &mut ymax);
+        }
+
+        Some(PixelBox {
+            xmin,
+            xmax,
+            ymin,
+            ymax,
+        })
+    }
+}
+
 impl From<[usize; 4]> for PixelBox {
     /// Constructs a `PixelBox` from `[xmin, xmax, ymin, ymax]`.
     fn from([xmin, xmax, ymin, ymax]: [usize; 4]) -> Self {
@@ -204,6 +229,31 @@ pub struct GeoBox {
     ymax: f64,
 }
 
+impl GeoBox {
+    fn new(xmin: f64, xmax: f64, ymin: f64, ymax: f64) -> Option<Self> {
+        if xmin == xmax || ymin == ymax {
+            return None;
+        }
+
+        let (mut xmin, mut xmax) = (xmin, xmax);
+        let (mut ymin, mut ymax) = (ymin, ymax);
+
+        if xmin > xmax {
+            std::mem::swap(&mut xmin, &mut xmax);
+        }
+        if ymin > ymax {
+            std::mem::swap(&mut ymin, &mut ymax);
+        }
+
+        Some(GeoBox {
+            xmin,
+            xmax,
+            ymin,
+            ymax,
+        })
+    }
+}
+
 impl From<[f64; 4]> for GeoBox {
     /// Constructs a `GeoBox` from `[xmin, xmax, ymin, ymax]`.
     fn from([xmin, xmax, ymin, ymax]: [f64; 4]) -> Self {
@@ -247,6 +297,7 @@ impl Bbox<f64> for GeoBox {
 /// > A geotransform is an affine transformation from the image coordinate space (row, column), also known as (pixel, line) to the georeferenced coordinate space (projected or geographic coordinates).
 ///
 /// [GDAL documentation](https://gdal.org/en/stable/tutorials/geotransforms_tut.html)
+#[derive(Debug)]
 pub struct GeoTransform {
     /// x-coordinate of the upper-left corner of the upper-left pixel
     x_off: f64,
@@ -343,6 +394,15 @@ impl GeoTransform {
         let x_pixel = (self.y_res * dx - self.x_rot * dy) / det;
         let y_line = (self.x_res * dy - self.y_rot * dx) / det;
         Some((x_pixel, y_line))
+    }
+
+    pub fn as_geobox(&self, raster_size: (usize, usize)) -> Option<GeoBox> {
+        GeoBox::new(
+            self.x_off,
+            self.x_off + self.x_res * raster_size.0 as f64,
+            self.y_off,
+            self.y_off + self.y_res * raster_size.1 as f64,
+        )
     }
 }
 

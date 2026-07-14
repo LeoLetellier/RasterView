@@ -2,12 +2,15 @@ use crate::raster::RasterHandler;
 // use crate::texture_thread::TextureWorker;
 use crate::viewers::Viewer;
 use anyhow::{Result, bail};
+use egui::Align;
 use egui::Color32;
+use egui::InnerResponse;
 use egui::Label;
 use egui::Layout;
 use egui::RichText;
 use egui::TextureHandle;
 use egui::Ui;
+use egui::accesskit::Role::Grid;
 use egui::widget_text::WidgetText;
 use egui_phosphor as icon;
 use std::path::Path;
@@ -46,15 +49,25 @@ impl Panel for LeftPanel {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum RightPanel {
     Palette,
+    Parameters,
 }
 
 impl Panel for RightPanel {
     fn symbol(&self) -> RichText {
-        RichText::new(icon::regular::PAINT_BRUSH_HOUSEHOLD)
+        match &self {
+            RightPanel::Palette => RichText::new(icon::regular::PAINT_BRUSH_HOUSEHOLD),
+            RightPanel::Parameters => RichText::new(icon::regular::GEAR),
+        }
     }
 
     fn symbol_highlight(&self) -> RichText {
-        RichText::new(icon::fill::PAINT_BRUSH_HOUSEHOLD).color(Color32::from_rgb(30, 144, 255))
+        match &self {
+            RightPanel::Palette => RichText::new(icon::fill::PAINT_BRUSH_HOUSEHOLD)
+                .color(Color32::from_rgb(30, 144, 255)),
+            RightPanel::Parameters => {
+                RichText::new(icon::fill::GEAR).color(Color32::from_rgb(30, 144, 255))
+            }
+        }
     }
 }
 
@@ -109,51 +122,62 @@ impl RasterView {
     //     self.view_mode = None;
     // }
     //
-    fn ui_left_panel(&self, ui: &mut Ui) {
+    fn ui_left_panel(&mut self, ui: &mut Ui) {
         match self.left_panel {
             LeftPanel::Metadata => {
-                ui.heading("Raster Information");
-                ui.separator();
+                if let Some(path) = &self.raster_path.as_ref() {
+                    ui.heading("Raster Information");
+                    ui.separator();
 
-                ui.horizontal(|ui| {
-                    ui.label("Path:");
-                    if let Some(path) = &self.raster_path {
-                        egui::ScrollArea::horizontal()
-                            .id_salt("path scroll")
-                            .show(ui, |ui| {
-                                if ui.monospace(path.display().to_string()).clicked() {
-                                    ui.ctx().copy_text(path.display().to_string());
-                                }
-                            });
-                    } else {
-                        ui.monospace("None");
-                    }
-                });
+                    egui::Grid::new("raster_info_grid")
+                        .num_columns(2)
+                        .spacing([8.0, 2.0])
+                        .show(ui, |ui| {
+                            ui.label("Path:");
+                            if let Some(path) = &self.raster_path {
+                                egui::ScrollArea::horizontal().id_salt("path scroll").show(
+                                    ui,
+                                    |ui| {
+                                        if ui.monospace(path.display().to_string()).clicked() {
+                                            ui.ctx().copy_text(path.display().to_string());
+                                        }
+                                    },
+                                );
+                            } else {
+                                ui.monospace("None");
+                            }
+                            ui.end_row();
 
-                ui.horizontal(|ui| {
-                    ui.label("File:");
-                    if let Some(path) = &self.raster_path {
-                        egui::ScrollArea::both()
-                            .id_salt("file scroll")
-                            .show(ui, |ui| {
-                                let name = path
-                                    .file_name()
-                                    .and_then(|n| n.to_str())
-                                    .unwrap_or("Unknown");
-                                if ui.monospace(name).clicked() {
-                                    ui.ctx().copy_text(name.to_string());
-                                }
-                            });
-                    } else {
-                        ui.monospace("None");
-                    }
-                });
+                            ui.label("File:");
+                            if let Some(path) = &self.raster_path {
+                                egui::ScrollArea::both()
+                                    .id_salt("file scroll")
+                                    .show(ui, |ui| {
+                                        let name = path
+                                            .file_name()
+                                            .and_then(|n| n.to_str())
+                                            .unwrap_or("Unknown");
+                                        if ui.monospace(name).clicked() {
+                                            ui.ctx().copy_text(name.to_string());
+                                        }
+                                    });
+                            } else {
+                                ui.monospace("None");
+                            }
+                            ui.end_row();
+                        });
+                } else {
+                    ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                        ui.add(Label::new("Open a raster file to begin ...").wrap());
+                    });
+                }
 
                 {
                     if let Some(viewer) = &self.viewer {
                         if let Some(raster_handler) = &viewer.raster_handler {
                             egui::ScrollArea::both().show(ui, |ui| {
                                 raster_handler.ui_dataset(ui);
+                                raster_handler.ui_bands(ui);
                             });
                         }
                     }
@@ -180,6 +204,13 @@ impl RasterView {
                 ui.horizontal_centered(|ui| {});
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    panel_button(
+                        &mut self.right_panel_open,
+                        &mut self.right_panel,
+                        RightPanel::Parameters,
+                        ui,
+                        "Toggle parameters panel",
+                    );
                     panel_button(
                         &mut self.right_panel_open,
                         &mut self.right_panel,
@@ -241,7 +272,7 @@ impl RasterView {
                 egui::widgets::global_theme_preference_switch(ui);
                 if ui
                     .button("Refresh")
-                    .on_hover_text("refetch all data from file")
+                    .on_hover_text("Refresh cache and metadata")
                     .clicked()
                 {
                     if let Some(view) = &mut self.viewer {
@@ -346,13 +377,8 @@ impl eframe::App for RasterView {
     }
 }
 
-pub fn setup_custom_style(ctx: &egui::Context) {
-    configure_fonts(ctx);
-    configure_text_styles(ctx);
-    // configure_visuals(ctx);
-}
-
-fn configure_fonts(ctx: &egui::Context) {
+pub fn setup_custom_fonts(ctx: &egui::Context) {
+    // Font family
     let mut fonts = egui::FontDefinitions::default();
 
     fonts.font_data.insert(
@@ -367,9 +393,8 @@ fn configure_fonts(ctx: &egui::Context) {
         .insert(0, "GeistRegular".to_owned());
 
     ctx.set_fonts(fonts);
-}
 
-fn configure_text_styles(ctx: &egui::Context) {
+    // Font size
     use egui::FontFamily::Proportional;
     use egui::FontId;
     use egui::TextStyle::*;
@@ -388,42 +413,17 @@ fn configure_text_styles(ctx: &egui::Context) {
     ctx.all_styles_mut(move |style| style.text_styles = text_styles.clone());
 }
 
-fn configure_visuals(ctx: &egui::Context) {
-    ctx.all_styles_mut(|style| {
-        // Spacing [https://docs.rs/egui/latest/src/egui/style.rs.html#1446-1471]
-        style.spacing.item_spacing = egui::vec2(10.0, 5.0); // 8.0 3.0
-        style.spacing.button_padding = egui::vec2(6.0, 2.0); // 4.0 1.0
-        style.spacing.window_margin = egui::Margin::same(8); // 6
-        style.spacing.menu_margin = egui::Margin::same(8); // 6
-        style.spacing.indent = 20.0; // 18.0
-        style.spacing.scroll.bar_width = 8.0; // 6.0 [https://docs.rs/egui/latest/src/egui/style.rs.html#581-585]
-
-        // Rounded corners
-        let radius = egui::CornerRadius::same(4);
-        style.visuals.window_corner_radius = radius;
-        style.visuals.menu_corner_radius = radius;
-        style.visuals.widgets.noninteractive.corner_radius = radius;
-        style.visuals.widgets.inactive.corner_radius = radius;
-        style.visuals.widgets.hovered.corner_radius = radius;
-        style.visuals.widgets.active.corner_radius = radius;
-        style.visuals.widgets.open.corner_radius = radius;
-
-        // Color accents
-        // style.visuals.selection.bg_fill = egui::Color32::from_rgb(0x3D, 0x7E, 0xFF);
-        // style.visuals.hyperlink_color = egui::Color32::from_rgb(0x5B, 0x9D, 0xFF);
-        // style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(0x3A, 0x3A, 0x40);
-        // style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(0x3D, 0x7E, 0xFF);
-
-        // Shadows on windows/popups
-        // style.visuals.window_shadow = egui::epaint::Shadow {
-        //     offset: [0, 6],
-        //     blur: 18,
-        //     spread: 0,
-        //     color: egui::Color32::from_black_alpha(90),
-        // };
-        // style.visuals.popup_shadow = style.visuals.window_shadow;
-
-        // Slightly faster hover/click feedback
-        // style.animation_time = 0.12;
-    });
+fn display_section(
+    title: String,
+    main_section: bool,
+    ui: &mut Ui,
+    add_contents: impl FnOnce(&mut Ui),
+) -> InnerResponse<()> {
+    if main_section {
+        ui.separator();
+    }
+    ui.heading(&title);
+    egui::Grid::new(format!("grid_section_{}", &title))
+        .num_columns(2)
+        .show(ui, add_contents)
 }

@@ -1,24 +1,21 @@
-use crate::raster::RasterHandler;
+use crate::{
+    raster::{BandMetadata, RasterHandler},
+    viewers::coords::Bbox,
+};
 use anyhow::Result;
 use egui::{RichText, Ui};
 use gdal::raster::RasterBand;
 
+// TODO struct containing all the displayed metadata to avoid FFI at each frame
 impl RasterHandler {
     pub fn ui_dataset(&self, ui: &mut Ui) {
-        let dataset = &self.0;
-        let driver = dataset.driver().short_name();
-        let size = dataset.raster_size();
-        let band_nb = dataset.raster_count();
-        let projection = dataset.projection();
-        let geotransform = dataset.geo_transform().ok();
-        let bbox = geotransform.map(|gt| {
-            [
-                gt[0],
-                gt[0] + (size.0 as f64) * gt[1],
-                gt[3] + (size.1 as f64) * gt[5],
-                gt[3],
-            ]
-        });
+        let metadata = &self.1;
+        let driver = &metadata.driver;
+        let size = metadata.size;
+        let band_nb = metadata.band_nb;
+        let projection = &metadata.projection;
+        let geotransform = &metadata.geotransform;
+        let bbox = metadata.bbox;
 
         prop_section(ui, None, &[["Driver".to_string(), driver.clone()]]);
         prop_section(
@@ -36,12 +33,12 @@ impl RasterHandler {
                 ui,
                 Some("Geotransform"),
                 &[
-                    ["x ul".to_string(), gt[0].to_string()],
-                    ["x res".to_string(), gt[1].to_string()],
-                    ["x rot".to_string(), gt[2].to_string()],
-                    ["y ul".to_string(), gt[3].to_string()],
-                    ["x rot".to_string(), gt[4].to_string()],
-                    ["x res".to_string(), gt[5].to_string()],
+                    ["x ul".to_string(), gt.offsets().x.to_string()],
+                    ["x res".to_string(), gt.resolutions().x.to_string()],
+                    ["x rot".to_string(), gt.rotations().x.to_string()],
+                    ["y ul".to_string(), gt.offsets().y.to_string()],
+                    ["x rot".to_string(), gt.rotations().y.to_string()],
+                    ["x res".to_string(), gt.resolutions().y.to_string()],
                 ],
             );
         }
@@ -50,41 +47,33 @@ impl RasterHandler {
                 ui,
                 Some("BBox"),
                 &[
-                    ["xmin".to_string(), bb[0].to_string()],
-                    ["xmax".to_string(), bb[1].to_string()],
-                    ["ymin".to_string(), bb[2].to_string()],
-                    ["ymax".to_string(), bb[3].to_string()],
+                    ["xmin".to_string(), bb.xmin().to_string()],
+                    ["xmax".to_string(), bb.xmax().to_string()],
+                    ["ymin".to_string(), bb.ymin().to_string()],
+                    ["ymax".to_string(), bb.ymax().to_string()],
                 ],
             );
         }
     }
 
-    fn ui_bands(&self, ui: &mut Ui) -> Result<()> {
-        self.0.rasterbands().try_for_each(|b| {
-            self.ui_band(&b?, ui);
-            Ok(())
+    pub fn ui_bands(&self, ui: &mut Ui) {
+        self.1.bands.iter().for_each(|b| {
+            self.ui_band(&b, ui);
         })
     }
 
-    fn ui_band(&self, band: &RasterBand, ui: &mut Ui) {
-        let dtype = band.band_type().name();
-        let unit = band.unit();
-        let unit = if unit.is_empty() { None } else { Some(unit) };
-        let overviews_nb = band.overview_count().unwrap_or(0) as usize;
-        let mut overviews = vec![];
-        for k in 0..overviews_nb {
-            if let Ok(o) = band.overview(k) {
-                let s = o.size();
-                overviews.push([k, s.0, s.1]);
-            }
-        }
-        let ndv = band.no_data_value();
-        let scale = band.scale();
-        let offset = band.offset();
+    fn ui_band(&self, band: &BandMetadata, ui: &mut Ui) {
+        let dtype = &band.dtype;
+        let unit = &band.unit;
+        let overviews_nb = band.overview_nb;
+        let overviews = &band.overviews;
+        let ndv = band.ndv;
+        let scale = band.scale;
+        let offset = band.offset;
 
         let mut props = vec![["dtype".to_string(), dtype.clone()]];
-        if let Some(v) = unit {
-            props.push(["unit".to_string(), v.clone()]);
+        if !unit.is_empty() {
+            props.push(["unit".to_string(), unit.clone()]);
         }
         if let Some(v) = ndv {
             props.push(["ndv".to_string(), v.to_string()]);
