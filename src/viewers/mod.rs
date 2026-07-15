@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use crate::raster::RasterHandler;
 use crate::viewers::coords::GeoBox;
-use crate::viewers::tiler::Tile;
+use crate::viewers::tiler::{TextureCache, Tile, TileWeighter};
 // use crate::viewers::tiler::CacheHandler;
 
 pub mod cmap;
@@ -36,6 +36,7 @@ pub struct Viewer {
 
     // TODO change vec to LRU eviction cache
     pub color_images: Vec<Tile>,
+    pub texture_cache: TextureCache,
     pub parameters: ViewerParams,
     pub state: ViewerState,
 }
@@ -44,6 +45,7 @@ pub struct Viewer {
 pub struct ViewerParams {
     tile_size: usize,
     viewport_padding: f64,
+    cache_size: u64,
 }
 
 impl Default for ViewerParams {
@@ -51,6 +53,8 @@ impl Default for ViewerParams {
         ViewerParams {
             tile_size: 256,
             viewport_padding: 0.0,
+            cache_size: 64 * 1024 * 1024, // 64MB
+                                          // TODO use cache.set_capacity to live update it
         }
     }
 }
@@ -77,15 +81,18 @@ impl Viewer {
         Ok(viewer)
     }
 
-    pub fn refresh_cache(&mut self) -> Result<()> {
-        // reset all caching
-        todo!()
+    pub fn refresh_cache(&mut self) {
+        self.texture_cache = TextureCache::with_weighter(500, 64 * 1024 * 1024, TileWeighter);
     }
 }
 
 impl Default for Viewer {
     fn default() -> Self {
         let live_bbox = [0.0, 1.0, 0.0, 1.0].into();
+        // Initialize cache for around 500 objects
+        // with weight capacity of 64 MB
+        let cache = TextureCache::with_weighter(500, 64 * 1024 * 1024, TileWeighter);
+
         Self {
             raster_handler: None,
             live_bbox,
@@ -94,6 +101,7 @@ impl Default for Viewer {
             // cache: None,
             // color_image: None,
             color_images: Default::default(),
+            texture_cache: cache,
             parameters: Default::default(),
             state: Default::default(),
         }

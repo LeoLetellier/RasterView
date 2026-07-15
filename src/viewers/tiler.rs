@@ -27,8 +27,9 @@ impl Viewer {
         // Determine the current zoom
         let view_extent = (lb.width(), lb.height());
         let screen_size = self.state.last_screen_size?; // needs to be captured from plot_ui.response().rect
+        let raster_size = rh.raster_size();
 
-        let downsampling: usize = self.need_zoom(view_extent, screen_size)?;
+        let downsampling: usize = self.need_zoom(view_extent, screen_size, raster_size)?;
         // Check against the viewmode for which band to load
         let bands: Vec<usize> = self.view_mode.need_bands();
 
@@ -55,7 +56,12 @@ impl Viewer {
     }
 
     /// Determine the level of zoom needed from a specific viewport extent
-    fn need_zoom(&self, view_extent: (f64, f64), screen_size: (f64, f64)) -> Option<usize> {
+    fn need_zoom(
+        &self,
+        view_extent: (f64, f64),
+        screen_size: (f64, f64),
+        raster_size: (usize, usize),
+    ) -> Option<usize> {
         let (view_w, view_h) = view_extent; // visible raster pixels (from PlotBounds width/height)
         let (screen_w, screen_h) = screen_size; // actual widget size in screen pixels
 
@@ -68,8 +74,17 @@ impl Viewer {
         let ratio_y = view_h / screen_h;
 
         let ratio = ratio_x.max(ratio_y).max(1.0);
+        // target downsampling from ratio alone
+        let raw_downsampling = ratio.log2().floor().max(0.0) as usize;
 
-        Some(ratio.log2().floor().max(0.0) as usize)
+        // Get the maximum downsampling allowed by the raster
+        //
+        // Otherwise will continue to degrade the resolution up to an empty raster
+        let tile_size = self.parameters.tile_size.max(1);
+        let max_dim = raster_size.0.max(raster_size.1).max(1);
+        let max_downsampling = (max_dim as f64 / tile_size as f64).log2().ceil().max(0.0) as usize;
+
+        Some(raw_downsampling.min(max_downsampling))
     }
 
     /// Tile the raster at given downsampling factor and gives all possible tile bboxes
@@ -191,9 +206,68 @@ impl Viewer {
         // Combine cache hits and newly loaded tiles (order not preserved)
         let new_color_images = cached_tiles.into_iter().chain(new_tiles).collect();
         self.color_images = new_color_images;
-        println!("Tiles loaded: {}", self.color_images.len());
-        println!("{:?}", self.color_images);
+        // println!("Tiles loaded: {}", self.color_images.len());
+        // println!("{:?}", self.color_images);
         Ok(&self.color_images)
+    }
+
+    pub fn request_cache_tiles(
+        &mut self,
+        tile_descriptions: &Vec<TileDescriptor>,
+        ui: &mut egui::Ui,
+    ) -> Result<Vec<Tile>> {
+        // Split requested descriptors into hits and misses
+        let mut missing: Vec<TileDescriptor> = Vec::new();
+        let mut hits: Vec<(TileDescriptor, TextureHandle)> =
+            Vec::with_capacity(tile_descriptions.len());
+
+        for td in tile_descriptions {
+            match self.texture_cache.get(td) {
+                Some(handle) => hits.push((td.clone(), handle)),
+                None => missing.push(td.clone()),
+            }
+        }
+
+        // Load whatever wasn't in the cache
+        let new_tiles: Vec<Tile> = if missing.is_empty() {
+            Vec::new()
+        } else {
+            let raster_handler = self
+                .raster_handler
+                .as_ref()
+                .ok_or_else(|| anyhow!("no raster loaded"))?;
+
+            missing
+                .into_iter()
+                .map(|td| raster_handler.tile_to_texture_direct_par(td, ui))
+                .collect::<Result<Vec<Tile>>>()?
+        };
+
+        // Insert newly loaded tiles into the cache
+        for tile in &new_tiles {
+            self.texture_cache
+                .insert(tile.tile_descriptor.clone(), tile.texture.clone());
+        }
+
+        // Combine cache hits + freshly loaded tiles
+        let mut result: Vec<Tile> = hits
+            .into_iter()
+            .map(|(tile_descriptor, texture)| Tile {
+                tile_descriptor,
+                texture,
+            })
+            .collect();
+        result.extend(new_tiles);
+
+        let cache_len = self.texture_cache.len();
+        let cache_weight = self.texture_cache.weight().div_ceil(1024 * 1024);
+
+        if cfg!(debug_assertions) {
+            println!("Number of elements in cache: {} textures", cache_len);
+            println!("Weight of elements in cache: {} MB", cache_weight);
+        }
+
+        Ok(result)
     }
 }
 
@@ -253,11 +327,11 @@ impl Tile {
 }
 
 #[derive(Clone)]
-struct TileWeighter;
+pub struct TileWeighter;
 
-impl Weighter<TileDescriptor, Arc<ColorImage>> for TileWeighter {
-    fn weight(&self, _key: &TileDescriptor, val: &Arc<ColorImage>) -> u64 {
-        (val.width() * val.height() * 4) as u64 // bytes
+impl Weighter<TileDescriptor, TextureHandle> for TileWeighter {
+    fn weight(&self, _key: &TileDescriptor, val: &TextureHandle) -> u64 {
+        val.byte_size() as u64
     }
 }
 
@@ -266,7 +340,7 @@ impl Weighter<TileDescriptor, Arc<ColorImage>> for TileWeighter {
 /// ```rs
 /// let cache = ImageCache::with_weighter(500, 64 * 1024 * 1024, TileWeighter); // ~64MB budget
 /// ```
-pub type ImageCache = Cache<TileDescriptor, Arc<ColorImage>, TileWeighter>;
+pub type TextureCache = Cache<TileDescriptor, TextureHandle, TileWeighter>;
 
 // pub fn fetch_cache_tile(
 //     raster_handler: &RasterHandler,

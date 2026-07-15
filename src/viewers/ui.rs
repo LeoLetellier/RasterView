@@ -22,11 +22,15 @@ impl Viewer {
         // let color_image = egui::ColorImage::from_rgba_unmultiplied([width, height], &raw);
 
         let tiles_needed = self.need_tiles();
+        // let tiles = tiles_needed
+        //     .clone()
+        //     .map(|tn| self.refresh_tiles(&tn, ui).ok())
+        //     .flatten();
+        // println!("{:?}", tiles_needed);
         let tiles = tiles_needed
             .clone()
-            .map(|tn| self.refresh_tiles(&tn, ui).ok())
+            .map(|tn| self.request_cache_tiles(&tn, ui).ok())
             .flatten();
-        // println!("{:?}", tiles_needed);
 
         // let handle = if let Some(ci) = &self.color_image {
         //     Some((
@@ -59,8 +63,10 @@ impl Viewer {
                 last_bounds = Some(plot_ui.plot_bounds());
 
                 tiles.map(|ot| ot.iter().for_each(|t| t.plot_ui(plot_ui)));
-                if let Some(tiles) = tiles_needed {
-                    tiles.iter().for_each(|t| t.ui_tile_bounds(plot_ui));
+                if cfg!(debug_assertions) {
+                    if let Some(tiles) = tiles_needed {
+                        tiles.iter().for_each(|t| t.ui_tile_bounds(plot_ui));
+                    }
                 }
             });
 

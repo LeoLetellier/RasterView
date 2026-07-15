@@ -383,7 +383,8 @@ pub fn setup_custom_fonts(ctx: &egui::Context) {
 
     fonts.font_data.insert(
         "GeistRegular".to_owned(),
-        egui::FontData::from_static(include_bytes!("../resources/fonts/Geist-Regular.ttf")).into(),
+        egui::FontData::from_static(include_bytes!("../../resources/fonts/Geist-Regular.ttf"))
+            .into(),
     );
 
     fonts
