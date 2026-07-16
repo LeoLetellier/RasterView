@@ -1,16 +1,13 @@
-use crate::raster::RasterHandler;
 // use crate::texture_thread::TextureWorker;
 use crate::viewers::Viewer;
-use anyhow::{Result, bail};
+use anyhow::Result;
 use egui::Align;
 use egui::Color32;
 use egui::InnerResponse;
 use egui::Label;
 use egui::Layout;
 use egui::RichText;
-use egui::TextureHandle;
 use egui::Ui;
-use egui::accesskit::Role::Grid;
 use egui::widget_text::WidgetText;
 use egui_phosphor as icon;
 use std::path::Path;
@@ -227,9 +224,9 @@ impl RasterView {
 
                     if let Some(view) = &self.viewer {
                         if let Some(px_pos) = view.state.last_cursor_pos {
-                            // Get pixel integers
-                            let x_pos = px_pos.x.max(0.0).floor();
-                            let y_pos = px_pos.y.max(0.0).floor();
+                            // Get pixel integers, so floor the value
+                            let x_pos = px_pos.x.floor();
+                            let y_pos = px_pos.y.floor();
 
                             if let Some(gt) = view
                                 .raster_handler

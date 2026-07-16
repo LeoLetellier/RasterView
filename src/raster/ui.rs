@@ -2,9 +2,7 @@ use crate::{
     raster::{BandMetadata, RasterHandler},
     viewers::coords::Bbox,
 };
-use anyhow::Result;
 use egui::{RichText, Ui};
-use gdal::raster::RasterBand;
 
 // TODO struct containing all the displayed metadata to avoid FFI at each frame
 impl RasterHandler {

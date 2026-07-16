@@ -1,17 +1,14 @@
 use anyhow::Result;
-use egui::ColorImage;
 use egui_plot::{PlotBounds, PlotPoint};
 use std::path::Path;
-use std::sync::Arc;
 
 use crate::raster::RasterHandler;
 use crate::viewers::coords::GeoBox;
 use crate::viewers::tiler::{TextureCache, Tile, TileWeighter};
-// use crate::viewers::tiler::CacheHandler;
 
 pub mod cmap;
 pub mod coords;
-// pub mod thread;
+pub mod thread;
 pub mod tiler;
 pub mod ui;
 
@@ -25,8 +22,8 @@ pub struct Viewer {
     /// Actual raster
     pub raster_handler: Option<RasterHandler>,
     /// Active View
-    pub live_bbox: GeoBox,
-    pub downscaling: usize,
+    // pub live_bbox: GeoBox,
+    // pub downscaling: usize,
     /// User parameters
     pub view_mode: ViewMode,
     /// Caching
@@ -35,7 +32,7 @@ pub struct Viewer {
     // pub color_image: Option<ColorImage>,
 
     // TODO change vec to LRU eviction cache
-    pub color_images: Vec<Tile>,
+    // pub color_images: Vec<Tile>,
     pub texture_cache: TextureCache,
     pub parameters: ViewerParams,
     pub state: ViewerState,
@@ -88,19 +85,19 @@ impl Viewer {
 
 impl Default for Viewer {
     fn default() -> Self {
-        let live_bbox = [0.0, 1.0, 0.0, 1.0].into();
+        // let live_bbox = [0.0, 1.0, 0.0, 1.0].into();
         // Initialize cache for around 500 objects
         // with weight capacity of 64 MB
         let cache = TextureCache::with_weighter(500, 64 * 1024 * 1024, TileWeighter);
 
         Self {
             raster_handler: None,
-            live_bbox,
-            downscaling: 0,
+            // live_bbox,
+            // downscaling: 0,
             view_mode: Default::default(),
             // cache: None,
             // color_image: None,
-            color_images: Default::default(),
+            // color_images: Default::default(),
             texture_cache: cache,
             parameters: Default::default(),
             state: Default::default(),

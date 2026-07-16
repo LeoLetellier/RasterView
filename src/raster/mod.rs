@@ -1,8 +1,8 @@
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use egui::ColorImage;
 use gdal::{
     Dataset, Metadata,
-    raster::{RasterBand, ResampleAlg},
+    raster::{Buffer, RasterBand, ResampleAlg},
 };
 use rayon::prelude::*;
 use std::{ops::Deref, path::Path};
@@ -301,6 +301,35 @@ impl RasterHandler {
         Ok(ColorImage::from_rgba_unmultiplied([sizex, sizey], &rgba))
     }
 
+    pub fn read_tile(&self, tile_descriptor: &TileDescriptor) -> Result<Buffer<f32>> {
+        let raster_band = self.rasterband(tile_descriptor.band)?;
+        let raster_size = self.raster_size();
+        let nodata = raster_band.no_data_value();
+
+        let pixel_bbox = &tile_descriptor.pixel_bbox;
+
+        // Full-resolution window into the raster we want to read
+        // Count from ymax for Y direction offset
+        let offset = (pixel_bbox.xmin(), raster_size.1 - pixel_bbox.ymax());
+        let window_size = (pixel_bbox.width(), pixel_bbox.height());
+
+        // Output buffer size after downsampling — GDAL will decimate/resample
+        // while reading when this is smaller than window_size.
+        let buffer_size = tile_descriptor.tile_pixel_size();
+
+        let mut buffer = raster_band.read_as::<f32>(
+            (offset.0 as isize, offset.1 as isize),
+            window_size,
+            buffer_size,
+            None,
+        )?;
+
+        // Treat ndv and non finite nbs as NaN
+        clean_nodata_and_nonfinite(&mut buffer, nodata);
+
+        Ok(buffer)
+    }
+
     pub fn tile_to_texture_direct_par(
         &self,
         tile_descriptor: TileDescriptor,
@@ -385,5 +414,59 @@ impl RasterHandler {
             tile_descriptor,
             texture: texure_handle,
         })
+    }
+}
+
+impl TileDescriptor {
+    pub fn read_buffer(&self, dataset: &Dataset) -> Result<Buffer<f32>> {
+        let raster_band = dataset.rasterband(self.band)?;
+        let raster_size = dataset.raster_size();
+        let nodata = raster_band.no_data_value();
+
+        let pixel_bbox = &self.pixel_bbox;
+
+        // Full-resolution window into the raster we want to read
+        // Count from ymax for Y direction offset
+        let offset = (pixel_bbox.xmin(), raster_size.1 - pixel_bbox.ymax());
+        let window_size = (pixel_bbox.width(), pixel_bbox.height());
+
+        // Output buffer size after downsampling — GDAL will decimate/resample
+        // while reading when this is smaller than window_size.
+        let buffer_size = self.tile_pixel_size();
+
+        let mut buffer = raster_band.read_as::<f32>(
+            (offset.0 as isize, offset.1 as isize),
+            window_size,
+            buffer_size,
+            None,
+        )?;
+
+        // Treat ndv and non finite nbs as NaN
+        clean_nodata_and_nonfinite(&mut buffer, nodata);
+
+        Ok(buffer)
+    }
+}
+
+/// Replace nodata and non-finite (NaN/Inf) values in-place with NaN,
+/// so downstream code has a single, consistent sentinel to check for.
+fn clean_nodata_and_nonfinite(buffer: &mut Buffer<f32>, nodata: Option<f64>) {
+    match nodata {
+        Some(nd) => {
+            let nd = nd as f32;
+            let tol = f32::EPSILON.max(nd.abs() * 1e-5);
+            for px in buffer.data_mut() {
+                if !px.is_finite() || (*px - nd).abs() <= tol {
+                    *px = f32::NAN;
+                }
+            }
+        }
+        None => {
+            for px in buffer.data_mut() {
+                if !px.is_finite() {
+                    *px = f32::NAN;
+                }
+            }
+        }
     }
 }

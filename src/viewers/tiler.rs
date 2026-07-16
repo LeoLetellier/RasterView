@@ -1,9 +1,8 @@
-use crate::raster::RasterHandler;
+use crate::viewers::Viewer;
 use crate::viewers::coords::{Bbox, GeoBox, PixelBox};
-use crate::viewers::{ActiveViewer, ViewMode, Viewer};
 
 use anyhow::{Result, anyhow};
-use egui::{ColorImage, TextureHandle, vec2};
+use egui::{TextureHandle, vec2};
 use egui_plot::{PlotImage, PlotUi};
 use quick_cache::sync::Cache;
 use quick_cache::{
@@ -14,7 +13,6 @@ use quick_cache::{
 use std::collections::HashSet;
 use std::fmt;
 use std::hash::Hash;
-use std::sync::Arc;
 
 impl Viewer {
     /// Determine the tiles needed for a specific viewport extent
@@ -161,55 +159,55 @@ impl Viewer {
         Some(visible)
     }
 
-    pub fn refresh_tiles(
-        &mut self,
-        tile_descriptions: &Vec<TileDescriptor>,
-        ui: &mut egui::Ui,
-    ) -> Result<&Vec<Tile>> {
-        let requested: HashSet<&TileDescriptor> = tile_descriptions.iter().collect();
+    // pub fn refresh_tiles(
+    //     &mut self,
+    //     tile_descriptions: &Vec<TileDescriptor>,
+    //     ui: &mut egui::Ui,
+    // ) -> Result<&Vec<Tile>> {
+    //     let requested: HashSet<&TileDescriptor> = tile_descriptions.iter().collect();
 
-        // Find image colors already in cache
-        let cached_tiles: Vec<Tile> = self
-            .color_images
-            .iter()
-            .filter(|t| requested.contains(&t.tile_descriptor))
-            .cloned()
-            .collect();
-        let found: HashSet<&TileDescriptor> =
-            cached_tiles.iter().map(|t| &t.tile_descriptor).collect();
+    //     // Find image colors already in cache
+    //     let cached_tiles: Vec<Tile> = self
+    //         .color_images
+    //         .iter()
+    //         .filter(|t| requested.contains(&t.tile_descriptor))
+    //         .cloned()
+    //         .collect();
+    //     let found: HashSet<&TileDescriptor> =
+    //         cached_tiles.iter().map(|t| &t.tile_descriptor).collect();
 
-        // Figure out which requested descriptors weren't in the cache
-        let missing_descriptions: Vec<TileDescriptor> = tile_descriptions
-            .iter()
-            .filter(|desc| !found.contains(*desc))
-            .cloned()
-            .collect();
+    //     // Figure out which requested descriptors weren't in the cache
+    //     let missing_descriptions: Vec<TileDescriptor> = tile_descriptions
+    //         .iter()
+    //         .filter(|desc| !found.contains(*desc))
+    //         .cloned()
+    //         .collect();
 
-        // Else load them, one at a time (each call is internally parallel)
-        let new_tiles: Vec<Tile> = if missing_descriptions.is_empty() {
-            Vec::new()
-        } else {
-            let raster_handler = self
-                .raster_handler
-                .as_ref()
-                .ok_or_else(|| anyhow!("no raster loaded"))?;
+    //     // Else load them, one at a time (each call is internally parallel)
+    //     let new_tiles: Vec<Tile> = if missing_descriptions.is_empty() {
+    //         Vec::new()
+    //     } else {
+    //         let raster_handler = self
+    //             .raster_handler
+    //             .as_ref()
+    //             .ok_or_else(|| anyhow!("no raster loaded"))?;
 
-            missing_descriptions
-                .into_iter()
-                .map(|td| raster_handler.tile_to_texture_direct_par(td, ui))
-                .collect::<Result<Vec<Tile>>>()?
-        };
+    //         missing_descriptions
+    //             .into_iter()
+    //             .map(|td| raster_handler.tile_to_texture_direct_par(td, ui))
+    //             .collect::<Result<Vec<Tile>>>()?
+    //     };
 
-        // Merge newly loaded tiles into the cache
-        self.color_images.extend(new_tiles.iter().cloned());
+    //     // Merge newly loaded tiles into the cache
+    //     self.color_images.extend(new_tiles.iter().cloned());
 
-        // Combine cache hits and newly loaded tiles (order not preserved)
-        let new_color_images = cached_tiles.into_iter().chain(new_tiles).collect();
-        self.color_images = new_color_images;
-        // println!("Tiles loaded: {}", self.color_images.len());
-        // println!("{:?}", self.color_images);
-        Ok(&self.color_images)
-    }
+    //     // Combine cache hits and newly loaded tiles (order not preserved)
+    //     let new_color_images = cached_tiles.into_iter().chain(new_tiles).collect();
+    //     self.color_images = new_color_images;
+    //     // println!("Tiles loaded: {}", self.color_images.len());
+    //     // println!("{:?}", self.color_images);
+    //     Ok(&self.color_images)
+    // }
 
     pub fn request_cache_tiles(
         &mut self,
@@ -279,6 +277,10 @@ pub struct TileDescriptor {
 }
 
 impl TileDescriptor {
+    pub fn tile_pixel_size(&self) -> (usize, usize) {
+        self.pixel_bbox.size_with_downsampling(self.downsampling)
+    }
+
     pub fn pixel_box(&self) -> &PixelBox {
         &self.pixel_bbox
     }
@@ -312,6 +314,12 @@ impl fmt::Debug for Tile {
 }
 
 impl Tile {
+    pub fn new(tile_descriptor: TileDescriptor, texture_handle: TextureHandle) -> Self {
+        Self {
+            tile_descriptor,
+            texture: texture_handle,
+        }
+    }
     pub fn plot_ui(&self, plot_ui: &mut PlotUi) {
         let tile_name = self.tile_descriptor.name();
         plot_ui.image(PlotImage::new(

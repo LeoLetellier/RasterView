@@ -1,9 +1,8 @@
-use crate::raster::RasterHandler;
 use crate::viewers::coords::{Bbox, PixelBox};
 use crate::viewers::tiler::TileDescriptor;
 use crate::viewers::{Viewer, dummy_checkerboard, dummy_gradient};
-use egui::{Ui, vec2};
-use egui_plot::{Plot, PlotBounds, PlotImage, PlotPoint, PlotPoints, PlotUi, Polygon};
+use egui::Ui;
+use egui_plot::{Plot, PlotPoint, PlotPoints, PlotUi, Polygon};
 
 impl Viewer {
     pub fn ui(&mut self, ui: &mut Ui) {
@@ -63,10 +62,10 @@ impl Viewer {
                 last_bounds = Some(plot_ui.plot_bounds());
 
                 tiles.map(|ot| ot.iter().for_each(|t| t.plot_ui(plot_ui)));
-                if cfg!(debug_assertions) {
-                    if let Some(tiles) = tiles_needed {
-                        tiles.iter().for_each(|t| t.ui_tile_bounds(plot_ui));
-                    }
+                if let Some(tiles) = tiles_needed {
+                    tiles
+                        .iter()
+                        .for_each(|t| t.ui_tile_bounds(plot_ui, cfg!(debug_assertions)));
                 }
             });
 
@@ -87,13 +86,19 @@ impl Viewer {
             None
         };
 
-        self.state.last_cursor_pos = cursor_plot_pos;
+        if let Some(rh) = &self.raster_handler {
+            if let Some(cpp) = cursor_plot_pos {
+                let cpp = PlotPoint::new(cpp.x, rh.raster_size().1 as f64 - cpp.y);
+                self.state.last_cursor_pos = Some(cpp)
+            }
+        }
+        // self.state.last_cursor_pos = cursor_plot_pos;
         // println!("{:?}", &self.last_cursor_pos);
     }
 }
 
 impl TileDescriptor {
-    fn ui_tile_bounds(&self, plot_ui: &mut PlotUi) {
+    fn ui_tile_bounds(&self, plot_ui: &mut PlotUi, show: bool) {
         let bbox = self.pixel_box();
 
         let xmin = bbox.xmin() as f64;
@@ -104,8 +109,14 @@ impl TileDescriptor {
         let points: PlotPoints =
             vec![[xmin, ymin], [xmax, ymin], [xmax, ymax], [xmin, ymax]].into();
 
+        let stroke_color = if show {
+            egui::Stroke::new(1.0, egui::Color32::RED)
+        } else {
+            egui::Stroke::new(1.0, egui::Color32::TRANSPARENT)
+        };
+
         let polygon = Polygon::new("tile_bounds", points)
-            .stroke(egui::Stroke::new(1.0, egui::Color32::RED))
+            .stroke(stroke_color)
             .fill_color(egui::Color32::TRANSPARENT);
 
         plot_ui.polygon(polygon);

@@ -10,13 +10,17 @@
 
 ## ✨ Features
 
-### Available
-
-### TODO
+* **GDAL raster support**: open `GTiff`, `ENVI`, `ROIPAC` files and more...
+* **Raster information**: display the metadata of your raster.
+* **Fast display**: compiled rendering operations and tile caching allows seemless raster exploration. For very large rasters, consider creating overviews using GDAL (`gdaladdo` command) before opening the raster in the application. 
+* [**Standard color palettes**](./resources/colormaps/README.md): use perceptually perceptive colormaps for intuitive color rendering. ``#TODO``
+* **Cube exploration**: display per pixel profiles along all bands, usefull to explore time series. ``#TODO``
 
 ## 🔧 Installation
 
-If you don't have rust installed, check the [Rust website](https://rust-lang.org/tools/install/).
+You need to have a working [GDAL](https://gdal.org/en/stable/) installation on your system (`libgdal`).
+
+This application builds using the Rust compiler. If you don't have rust installed, check the [Rust website](https://rust-lang.org/tools/install/).
 
 ```shell
 git clone https://github.com/LeoLetellier/RasterView
