@@ -25,7 +25,7 @@ matplotlib: plotting with Python.
 
 ## **SCM**
 
-Accurate data visualisation needs accurate scales readable by everyone. #UseBatlow
+Accurate data visualisation needs accurate scales readable by everyone. `#UseBatlow`
 
 > The Scientific colour map batlow (Crameri 2018) is used in this study to prevent visual distortion of the data and exclusion of readers with colour-vision deficiencies (Crameri et al., 2020).
 

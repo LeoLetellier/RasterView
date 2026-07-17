@@ -33,7 +33,7 @@ pub struct Viewer {
 
     // TODO change vec to LRU eviction cache
     // pub color_images: Vec<Tile>,
-    pub texture_cache: TextureCache,
+    // pub texture_cache: TextureCache,
     pub parameters: ViewerParams,
     pub state: ViewerState,
 }
@@ -64,9 +64,9 @@ pub struct ViewerState {
 }
 
 impl Viewer {
-    pub fn with_raster(path: &Path) -> Result<Self> {
+    pub fn with_raster(path: &Path, ctx: egui::Context) -> Result<Self> {
         let mut viewer = Self::default();
-        let raster_handler = RasterHandler::new(path)?;
+        let raster_handler = RasterHandler::new(path, ctx)?;
         viewer.raster_handler = Some(raster_handler);
 
         // viewer.color_image = if let Some(rh) = &viewer.raster_handler {
@@ -79,7 +79,9 @@ impl Viewer {
     }
 
     pub fn refresh_cache(&mut self) {
-        self.texture_cache = TextureCache::with_weighter(500, 64 * 1024 * 1024, TileWeighter);
+        if let Some(rh) = &mut self.raster_handler {
+            rh.refresh_cache();
+        }
     }
 }
 
@@ -98,7 +100,7 @@ impl Default for Viewer {
             // cache: None,
             // color_image: None,
             // color_images: Default::default(),
-            texture_cache: cache,
+            // texture_cache: cache,
             parameters: Default::default(),
             state: Default::default(),
         }

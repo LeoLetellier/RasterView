@@ -1,5 +1,6 @@
 use anyhow::Result;
-use egui::ColorImage;
+use egui::{ColorImage, TextureHandle};
+use egui_plot::PlotPoint;
 use gdal::{
     Dataset, Metadata,
     raster::{Buffer, RasterBand, ResampleAlg},
@@ -8,15 +9,24 @@ use rayon::prelude::*;
 use std::{ops::Deref, path::Path};
 
 use crate::viewers::{
+    ViewMode,
     coords::{self, Bbox, GeoBox, GeoTransform, PixelBox},
-    tiler::{Tile, TileDescriptor},
+    thread::TextureWorker,
+    tiler::{TextureCache, Tile, TileDescriptor, TileWeighter},
 };
+use std::collections::HashSet;
 use std::sync::Arc;
 
 pub mod ui;
 
 #[derive(Debug)]
-pub struct RasterHandler(Dataset, RasterMetadata);
+pub struct RasterHandler {
+    gdal_dataset: Dataset,
+    raster_metadata: RasterMetadata,
+    texture_worker: TextureWorker,
+    texture_cache: TextureCache,
+    pending_tiles: HashSet<TileDescriptor>,
+}
 
 #[derive(Debug)]
 pub struct RasterMetadata {
@@ -102,7 +112,7 @@ impl Deref for RasterHandler {
     type Target = Dataset;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.gdal_dataset
     }
 }
 
@@ -193,20 +203,26 @@ impl RasterHandler {
         todo!()
     }
 
-    pub(crate) fn new(path: impl AsRef<Path>) -> Result<Self> {
-        let dataset = Dataset::open(&path)?;
-        let metadata = RasterMetadata::try_from_dataset(&dataset)?;
+    pub(crate) fn new(path: impl AsRef<Path>, ctx: egui::Context) -> Result<Self> {
+        let gdal_dataset = Dataset::open(&path)?;
+        let dataset_for_thread = Dataset::open(&path)?;
+        let raster_metadata = RasterMetadata::try_from_dataset(&gdal_dataset)?;
 
-        Ok(Self(dataset, metadata))
+        let texture_worker = TextureWorker::new(ctx, dataset_for_thread);
+        let texture_cache = TextureCache::with_weighter(500, 80 * 1024 * 1024, TileWeighter);
+
+        Ok(Self {
+            gdal_dataset,
+            raster_metadata,
+            texture_worker,
+            texture_cache,
+            pending_tiles: Default::default(),
+        })
     }
 
     fn update_dataset(&mut self, path: &Path) -> Result<&Self> {
         gdal::Dataset::open(path)?;
         Ok(self)
-    }
-
-    pub fn raster_size(&self) -> (usize, usize) {
-        self.0.raster_size()
     }
 
     pub fn to_colorimage_direct(&self, band: usize) -> Result<ColorImage> {
@@ -414,6 +430,121 @@ impl RasterHandler {
             tile_descriptor,
             texture: texure_handle,
         })
+    }
+
+    pub fn request_cache_tiles2(
+        &mut self,
+        tile_descriptions: &Vec<TileDescriptor>,
+        view_center: PlotPoint,
+        view_mode: ViewMode,
+    ) -> Result<Vec<Tile>> {
+        // Pull in everything the background thread finished since last frame
+        for tile in self.texture_worker.poll_results() {
+            self.pending_tiles.remove(&tile.tile_descriptor);
+            self.texture_cache
+                .insert(tile.tile_descriptor.clone(), tile.texture);
+        }
+
+        // Split requested descriptors into cache hits and misses
+        let mut missing: Vec<TileDescriptor> = Vec::new();
+        let mut hits: Vec<Tile> = Vec::with_capacity(tile_descriptions.len());
+        for td in tile_descriptions {
+            match self.texture_cache.get(td) {
+                Some(texture) => hits.push(Tile {
+                    tile_descriptor: td.clone(),
+                    texture,
+                }),
+                None => missing.push(td.clone()),
+            }
+        }
+
+        // Tell the worker what's still relevant, so it can drop stale queued jobs
+        self.texture_worker.set_wanted(missing.iter().cloned());
+
+        // Drop pending-tracking for tiles no longer requested this frame —
+        // otherwise they can get stuck "pending" forever once the worker skips them
+        let missing_set: HashSet<&TileDescriptor> = missing.iter().collect();
+        self.pending_tiles.retain(|td| missing_set.contains(td));
+
+        // Nearest-first, so the worker chews through what's on screen first
+        missing.sort_by(|a, b| {
+            a.distance_to(view_center)
+                .partial_cmp(&b.distance_to(view_center))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        for td in missing {
+            if self.pending_tiles.insert(td.clone()) {
+                self.texture_worker.request_load((td, view_mode.clone()))?;
+            }
+        }
+
+        if cfg!(debug_assertions) {
+            let cache_len = self.texture_cache.len();
+            let cache_weight = self.texture_cache.weight().div_ceil(1024 * 1024);
+            println!("Number of elements in cache: {} textures", cache_len);
+            println!("Weight of elements in cache: {} MB", cache_weight);
+        }
+
+        Ok(hits)
+    }
+
+    pub fn refresh_cache(&mut self) {
+        self.texture_cache = TextureCache::with_weighter(500, 80 * 1024 * 1024, TileWeighter);
+    }
+
+    pub fn request_cache_tiles(
+        &mut self,
+        tile_descriptions: &Vec<TileDescriptor>,
+        ui: &mut egui::Ui,
+    ) -> Result<Vec<Tile>> {
+        // Split requested descriptors into hits and misses
+        let mut missing: Vec<TileDescriptor> = Vec::new();
+        let mut hits: Vec<(TileDescriptor, TextureHandle)> =
+            Vec::with_capacity(tile_descriptions.len());
+
+        for td in tile_descriptions {
+            match self.texture_cache.get(td) {
+                Some(handle) => hits.push((td.clone(), handle)),
+                None => missing.push(td.clone()),
+            }
+        }
+
+        // Load whatever wasn't in the cache
+        let new_tiles: Vec<Tile> = if missing.is_empty() {
+            Vec::new()
+        } else {
+            missing
+                .into_iter()
+                .map(|td| self.tile_to_texture_direct_par(td, ui))
+                .collect::<Result<Vec<Tile>>>()?
+        };
+
+        // Insert newly loaded tiles into the cache
+        for tile in &new_tiles {
+            self.texture_cache
+                .insert(tile.tile_descriptor.clone(), tile.texture.clone());
+        }
+
+        // Combine cache hits + freshly loaded tiles
+        let mut result: Vec<Tile> = hits
+            .into_iter()
+            .map(|(tile_descriptor, texture)| Tile {
+                tile_descriptor,
+                texture,
+            })
+            .collect();
+        result.extend(new_tiles);
+
+        let cache_len = self.texture_cache.len();
+        let cache_weight = self.texture_cache.weight().div_ceil(1024 * 1024);
+
+        if cfg!(debug_assertions) {
+            println!("Number of elements in cache: {} textures", cache_len);
+            println!("Weight of elements in cache: {} MB", cache_weight);
+        }
+
+        Ok(result)
     }
 }
 

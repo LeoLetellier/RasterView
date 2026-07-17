@@ -7,7 +7,7 @@ use egui::{RichText, Ui};
 // TODO struct containing all the displayed metadata to avoid FFI at each frame
 impl RasterHandler {
     pub fn ui_dataset(&self, ui: &mut Ui) {
-        let metadata = &self.1;
+        let metadata = &self.raster_metadata;
         let driver = &metadata.driver;
         let size = metadata.size;
         let band_nb = metadata.band_nb;
@@ -55,7 +55,7 @@ impl RasterHandler {
     }
 
     pub fn ui_bands(&self, ui: &mut Ui) {
-        self.1.bands.iter().for_each(|b| {
+        self.raster_metadata.bands.iter().for_each(|b| {
             self.ui_band(&b, ui);
         })
     }

@@ -2,42 +2,53 @@ use crate::viewers::ViewMode;
 use crate::viewers::tiler::{Tile, TileDescriptor};
 use anyhow::Result;
 use gdal::Dataset;
+use std::collections::HashSet;
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 /// Handler of the texture thread
 ///
 /// * `texture_worker.request_load(worker)` to ask to generate new texture
 /// * `texture_worker.poll_request()` to check if a newer texture is available
-pub(crate) struct TextureWorker {
+#[derive(Debug)]
+pub struct TextureWorker {
     job_texture_thread: Sender<(TileDescriptor, ViewMode)>,
     result_texture_thread: Receiver<Tile>,
+    /// Check if the current vec tile to loaded is outdated
+    wanted: Arc<Mutex<HashSet<TileDescriptor>>>,
 }
 
 impl TextureWorker {
     /// Initialize the texture worker thread
-    pub(super) fn new(ctx: egui::Context, dataset: Dataset) -> Self {
-        let (job_texture_thread, result_texture_thread) = spawn_worker(ctx, dataset);
+    pub fn new(ctx: egui::Context, dataset: Dataset) -> Self {
+        let wanted = Arc::new(Mutex::new(HashSet::new()));
+        let (job_texture_thread, result_texture_thread) =
+            spawn_worker(ctx, dataset, wanted.clone());
         Self {
             job_texture_thread,
             result_texture_thread,
+            wanted,
         }
     }
 
+    /// Replace the set of tiles that are still relevant. Call once per frame
+    /// before queuing new jobs, so the worker can drop stale ones.
+    pub fn set_wanted(&self, tiles: impl IntoIterator<Item = TileDescriptor>) {
+        let mut w = self.wanted.lock().unwrap();
+        w.clear();
+        w.extend(tiles);
+    }
+
     /// Send a request for a texture refresh
-    pub(crate) fn request_load(&mut self, worker: (TileDescriptor, ViewMode)) -> Result<()> {
+    pub fn request_load(&mut self, worker: (TileDescriptor, ViewMode)) -> Result<()> {
         self.job_texture_thread.send(worker)?;
         Ok(())
     }
 
     /// Check if a new texture is available
-    pub(crate) fn poll_result(&mut self) -> Option<Tile> {
-        let mut latest = None;
-        while let Ok(res) = self.result_texture_thread.try_recv() {
-            // in case results queued up
-            latest = Some(res);
-        }
-        latest
+    pub fn poll_results(&mut self) -> Vec<Tile> {
+        self.result_texture_thread.try_iter().collect()
     }
 }
 
@@ -45,36 +56,39 @@ impl TextureWorker {
 pub fn spawn_worker(
     ctx: egui::Context,
     dataset: Dataset,
+    wanted: Arc<Mutex<HashSet<TileDescriptor>>>,
 ) -> (Sender<(TileDescriptor, ViewMode)>, Receiver<Tile>) {
     let (job_tx, job_rx) = mpsc::channel::<(TileDescriptor, ViewMode)>();
     let (result_tx, result_rx) = mpsc::channel::<Tile>();
 
     thread::spawn(move || {
-        loop {
-            // Block here with zero CPU until a job arrives
-            let Ok(job) = job_rx.recv() else { break }; // breaks if Sender dropped
+        // Process every queued job in order — don't collapse to "latest only"
+        // anymore, since jobs now represent a real backlog of missing tiles.
+        while let Ok((tile_descriptor, view)) = job_rx.recv() {
+            // Check if outdated
+            if !wanted.lock().unwrap().contains(&tile_descriptor) {
+                continue;
+            }
+            let Ok(buffer) = tile_descriptor.read_buffer(&dataset) else {
+                continue;
+            };
+            // Check again after read
+            if !wanted.lock().unwrap().contains(&tile_descriptor) {
+                continue;
+            }
 
-            // Drain any newer jobs that arrived while we were busy
-            let (tile_descriptor, view): (TileDescriptor, ViewMode) =
-                job_rx.try_iter().last().unwrap_or(job);
+            let image_color = view.color.buffer_to_colorimage(buffer);
 
-            // Tile descriptor to buffer
-            let buffer = tile_descriptor.read_buffer(&dataset);
+            let texture_handle = ctx.load_texture(
+                format!("texture_tile_{}", tile_descriptor.name()),
+                image_color,
+                egui::TextureOptions::NEAREST,
+            );
 
-            if let Ok(b) = buffer {
-                // Buffer to ColorImage
-                let image_color = view.color.buffer_to_colorimage(b);
+            let tile = Tile::new(tile_descriptor, texture_handle);
 
-                // ColorImage to Texture
-                let texture_handle = ctx.load_texture(
-                    format!("texture_tile_{}", tile_descriptor.name()),
-                    image_color,
-                    egui::TextureOptions::NEAREST,
-                );
-
-                // Texture as Tile
-                let tile = Tile::new(tile_descriptor, texture_handle);
-                let _ = result_tx.send(tile);
+            if result_tx.send(tile).is_ok() {
+                ctx.request_repaint(); // wake the UI so it picks this up
             }
         }
     });

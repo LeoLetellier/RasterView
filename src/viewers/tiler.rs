@@ -10,6 +10,7 @@ use quick_cache::{
     sync::{EntryAction, EntryResult},
 };
 
+use egui_plot::PlotPoint;
 use std::collections::HashSet;
 use std::fmt;
 use std::hash::Hash;
@@ -208,65 +209,6 @@ impl Viewer {
     //     // println!("{:?}", self.color_images);
     //     Ok(&self.color_images)
     // }
-
-    pub fn request_cache_tiles(
-        &mut self,
-        tile_descriptions: &Vec<TileDescriptor>,
-        ui: &mut egui::Ui,
-    ) -> Result<Vec<Tile>> {
-        // Split requested descriptors into hits and misses
-        let mut missing: Vec<TileDescriptor> = Vec::new();
-        let mut hits: Vec<(TileDescriptor, TextureHandle)> =
-            Vec::with_capacity(tile_descriptions.len());
-
-        for td in tile_descriptions {
-            match self.texture_cache.get(td) {
-                Some(handle) => hits.push((td.clone(), handle)),
-                None => missing.push(td.clone()),
-            }
-        }
-
-        // Load whatever wasn't in the cache
-        let new_tiles: Vec<Tile> = if missing.is_empty() {
-            Vec::new()
-        } else {
-            let raster_handler = self
-                .raster_handler
-                .as_ref()
-                .ok_or_else(|| anyhow!("no raster loaded"))?;
-
-            missing
-                .into_iter()
-                .map(|td| raster_handler.tile_to_texture_direct_par(td, ui))
-                .collect::<Result<Vec<Tile>>>()?
-        };
-
-        // Insert newly loaded tiles into the cache
-        for tile in &new_tiles {
-            self.texture_cache
-                .insert(tile.tile_descriptor.clone(), tile.texture.clone());
-        }
-
-        // Combine cache hits + freshly loaded tiles
-        let mut result: Vec<Tile> = hits
-            .into_iter()
-            .map(|(tile_descriptor, texture)| Tile {
-                tile_descriptor,
-                texture,
-            })
-            .collect();
-        result.extend(new_tiles);
-
-        let cache_len = self.texture_cache.len();
-        let cache_weight = self.texture_cache.weight().div_ceil(1024 * 1024);
-
-        if cfg!(debug_assertions) {
-            println!("Number of elements in cache: {} textures", cache_len);
-            println!("Weight of elements in cache: {} MB", cache_weight);
-        }
-
-        Ok(result)
-    }
 }
 
 #[derive(Debug, PartialEq, Hash, Eq, Clone)]
@@ -295,6 +237,13 @@ impl TileDescriptor {
             self.pixel_bbox.ymin(),
             self.pixel_bbox.ymax()
         )
+    }
+
+    pub fn distance_to(&self, point: PlotPoint) -> f64 {
+        let center_point = self.pixel_bbox.center();
+        let dx = center_point.x - point.x;
+        let dy = center_point.y - point.y;
+        (dx * dx + dy * dy).sqrt()
     }
 }
 

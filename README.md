@@ -29,3 +29,13 @@ cargo build --release
 ```
 
 The binary will be located in `./target/release/`.
+
+If you have issues with the local GDAL installation, try using GDAL in a conda environment instead, such as:
+
+```shell
+conda create -n gdal311 -c conda-forge gdal=3.11
+conda activate gdal311
+export GDALHOME=$CONDA_PREFIX
+export PKG_CONFIG_PATH="$CONDA_PREFIX/lib/pkgconfig:$PKG_CONFIG_PATH"
+cargo clean
+```

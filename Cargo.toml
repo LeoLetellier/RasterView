@@ -17,7 +17,6 @@ build = "build.rs"
 [dependencies]
 anyhow = "1.0.103"
 clap = "4.6.1"
-crossbeam = "0.8.4"
 eframe = "0.35.0"
 egui = "0.35.0"
 egui-phosphor = { git = "https://github.com/crumblingstatue/egui-phosphor", branch = "egui-035", features = ["bold", "fill", "light", "thin"] }

@@ -88,27 +88,27 @@ impl RasterView {
         }
     }
 
-    fn update_path(&mut self, new_path: &Path) -> Result<()> {
+    fn update_path(&mut self, new_path: &Path, ctx: egui::Context) -> Result<()> {
         if let Some(path) = &self.raster_path {
             // Check if we really got new raster
             if path != new_path {
-                self.viewer = Some(Viewer::with_raster(new_path)?);
+                self.viewer = Some(Viewer::with_raster(new_path, ctx)?);
             } else {
                 // Nothing to do, early return
                 return Ok(());
             }
         } else {
             // First raster to initialize
-            self.viewer = Some(Viewer::with_raster(new_path)?);
+            self.viewer = Some(Viewer::with_raster(new_path, ctx)?);
         }
 
         self.raster_path = Some(new_path.into());
         Ok(())
     }
 
-    fn reset_viewer(&mut self) -> Result<()> {
+    fn reset_viewer(&mut self, ctx: egui::Context) -> Result<()> {
         if let Some(path) = &self.raster_path {
-            self.viewer = Some(Viewer::with_raster(&path.as_path())?);
+            self.viewer = Some(Viewer::with_raster(&path.as_path(), ctx)?);
         }
         Ok(())
     }
@@ -122,52 +122,45 @@ impl RasterView {
     fn ui_left_panel(&mut self, ui: &mut Ui) {
         match self.left_panel {
             LeftPanel::Metadata => {
-                if let Some(path) = &self.raster_path.as_ref() {
-                    ui.heading("Raster Information");
-                    ui.separator();
+                ui.heading("Raster Information");
+                ui.separator();
 
-                    egui::Grid::new("raster_info_grid")
-                        .num_columns(2)
-                        .spacing([8.0, 2.0])
-                        .show(ui, |ui| {
-                            ui.label("Path:");
-                            if let Some(path) = &self.raster_path {
-                                egui::ScrollArea::horizontal().id_salt("path scroll").show(
-                                    ui,
-                                    |ui| {
-                                        if ui.monospace(path.display().to_string()).clicked() {
-                                            ui.ctx().copy_text(path.display().to_string());
-                                        }
-                                    },
-                                );
-                            } else {
-                                ui.monospace("None");
-                            }
-                            ui.end_row();
+                egui::Grid::new("raster_info_grid")
+                    .num_columns(2)
+                    .spacing([8.0, 2.0])
+                    .show(ui, |ui| {
+                        ui.label("Path:");
+                        if let Some(path) = &self.raster_path {
+                            egui::ScrollArea::horizontal()
+                                .id_salt("path scroll")
+                                .show(ui, |ui| {
+                                    if ui.monospace(path.display().to_string()).clicked() {
+                                        ui.ctx().copy_text(path.display().to_string());
+                                    }
+                                });
+                        } else {
+                            ui.monospace("None");
+                        }
+                        ui.end_row();
 
-                            ui.label("File:");
-                            if let Some(path) = &self.raster_path {
-                                egui::ScrollArea::both()
-                                    .id_salt("file scroll")
-                                    .show(ui, |ui| {
-                                        let name = path
-                                            .file_name()
-                                            .and_then(|n| n.to_str())
-                                            .unwrap_or("Unknown");
-                                        if ui.monospace(name).clicked() {
-                                            ui.ctx().copy_text(name.to_string());
-                                        }
-                                    });
-                            } else {
-                                ui.monospace("None");
-                            }
-                            ui.end_row();
-                        });
-                } else {
-                    ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                        ui.add(Label::new("Open a raster file to begin ...").wrap());
+                        ui.label("File:");
+                        if let Some(path) = &self.raster_path {
+                            egui::ScrollArea::both()
+                                .id_salt("file scroll")
+                                .show(ui, |ui| {
+                                    let name = path
+                                        .file_name()
+                                        .and_then(|n| n.to_str())
+                                        .unwrap_or("Unknown");
+                                    if ui.monospace(name).clicked() {
+                                        ui.ctx().copy_text(name.to_string());
+                                    }
+                                });
+                        } else {
+                            ui.monospace("None");
+                        }
+                        ui.end_row();
                     });
-                }
 
                 {
                     if let Some(viewer) = &self.viewer {
@@ -262,7 +255,7 @@ impl RasterView {
                 .clicked()
             {
                 if let Some(path) = rfd::FileDialog::new().pick_file() {
-                    let _ = self.update_path(path.as_path());
+                    let _ = self.update_path(path.as_path(), ui.ctx().clone());
                 }
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -339,7 +332,7 @@ impl eframe::App for RasterView {
         ui.ctx().input(|i| {
             if let Some(dropped) = i.raw.dropped_files.first() {
                 if let Some(path) = &dropped.path {
-                    let _ = self.update_path(&path.to_path_buf());
+                    let _ = self.update_path(&path.to_path_buf(), ui.ctx().clone());
                 }
             }
         });
@@ -352,25 +345,47 @@ impl eframe::App for RasterView {
             self.ui_bottom_panel(ui);
         });
 
-        let mut is_open = self.left_panel_open;
-        egui::Panel::left("left panel")
-            .max_size(ui.ctx().content_rect().width() * 0.33)
-            .show_collapsible(ui, &mut is_open, |ui| {
-                self.ui_left_panel(ui);
-            });
+        if self.raster_path.is_some() {
+            let mut is_open = self.left_panel_open;
+            egui::Panel::left("left panel")
+                .max_size(ui.ctx().content_rect().width() * 0.33)
+                .show_collapsible(ui, &mut is_open, |ui| {
+                    self.ui_left_panel(ui);
+                });
 
-        let mut is_open = self.right_panel_open;
-        egui::Panel::right("right panel")
-            .max_size(ui.ctx().content_rect().width() * 0.33)
-            .show_collapsible(ui, &mut is_open, |ui| {
-                self.ui_right_panel(ui);
-            });
+            let mut is_open = self.right_panel_open;
+            egui::Panel::right("right panel")
+                .max_size(ui.ctx().content_rect().width() * 0.33)
+                .show_collapsible(ui, &mut is_open, |ui| {
+                    self.ui_right_panel(ui);
+                });
 
-        egui::CentralPanel::default().show(ui, |ui| {
-            if let Some(view) = &mut self.viewer {
-                view.ui(ui);
-            }
-        });
+            egui::CentralPanel::default().show(ui, |ui| {
+                if let Some(view) = &mut self.viewer {
+                    view.ui(ui);
+                }
+            });
+        } else {
+            ui.with_layout(
+                egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
+                |ui| {
+                    let old_visuals = ui.style().visuals.clone();
+                    ui.style_mut().visuals.widgets.inactive.weak_bg_fill =
+                        egui::Color32::TRANSPARENT;
+
+                    let button = egui::Button::new("Open a raster file to begin...")
+                        .min_size(egui::Vec2::new(360.0, 48.0));
+
+                    if ui.add(button).clicked() {
+                        if let Some(path) = rfd::FileDialog::new().pick_file() {
+                            let _ = self.update_path(path.as_path(), ui.ctx().clone());
+                        }
+                    }
+
+                    ui.style_mut().visuals = old_visuals;
+                },
+            );
+        }
     }
 }
 
