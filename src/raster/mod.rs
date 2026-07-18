@@ -1,5 +1,5 @@
 use anyhow::Result;
-use egui::{ColorImage, TextureHandle};
+use egui::ColorImage;
 use egui_plot::PlotPoint;
 use gdal::{
     Dataset, Metadata,
@@ -79,6 +79,7 @@ pub struct BandMetadata {
     scale: Option<f64>,
     offset: Option<f64>,
     overviews: Vec<[usize; 3]>,
+    // minmax_approx: (f32, f32),
     // TODO min/max
     // TODO stats
 }
@@ -117,6 +118,8 @@ impl Deref for RasterHandler {
 }
 
 impl RasterHandler {
+    const CACHE_EXPECTED_MAXIMUM_ELEMENTS: usize = 500;
+
     /// Fetch the raster geotransform for conversion between `PixelBox` and `GeoBox`
     pub fn get_pixel_geotransform(&self) -> Option<coords::GeoTransform> {
         self.geo_transform()
@@ -127,6 +130,7 @@ impl RasterHandler {
     /// Read a portion of a specific band.
     ///
     /// Let `resampling_alg` to `None` to use Nearest Neighbor resampling (fastest)
+    #[deprecated]
     fn read_band_at_scale(
         &self,
         band: &gdal::raster::RasterBand,
@@ -193,6 +197,7 @@ impl RasterHandler {
         .expect("failed to read raster band")
     }
 
+    #[deprecated]
     fn read_as_time_series(
         &self,
         band_range: Option<(usize, usize)>,
@@ -203,13 +208,17 @@ impl RasterHandler {
         todo!()
     }
 
-    pub(crate) fn new(path: impl AsRef<Path>, ctx: egui::Context) -> Result<Self> {
+    pub(crate) fn new(path: impl AsRef<Path>, ctx: egui::Context, cache_size: u64) -> Result<Self> {
         let gdal_dataset = Dataset::open(&path)?;
         let dataset_for_thread = Dataset::open(&path)?;
         let raster_metadata = RasterMetadata::try_from_dataset(&gdal_dataset)?;
 
         let texture_worker = TextureWorker::new(ctx, dataset_for_thread);
-        let texture_cache = TextureCache::with_weighter(500, 80 * 1024 * 1024, TileWeighter);
+        let texture_cache = TextureCache::with_weighter(
+            Self::CACHE_EXPECTED_MAXIMUM_ELEMENTS,
+            cache_size,
+            TileWeighter,
+        );
 
         Ok(Self {
             gdal_dataset,
@@ -225,6 +234,7 @@ impl RasterHandler {
         Ok(self)
     }
 
+    #[deprecated]
     pub fn to_colorimage_direct(&self, band: usize) -> Result<ColorImage> {
         let raster_band = self.rasterband(band)?;
         let (sizex, sizey) = self.raster_size();
@@ -273,6 +283,7 @@ impl RasterHandler {
         Ok(ColorImage::from_rgba_unmultiplied([sizex, sizey], &rgba))
     }
 
+    #[deprecated]
     pub fn to_colorimage_direct_par(&self, band: usize) -> Result<ColorImage> {
         let raster_band = self.rasterband(band)?;
         let (sizex, sizey) = self.raster_size();
@@ -317,6 +328,7 @@ impl RasterHandler {
         Ok(ColorImage::from_rgba_unmultiplied([sizex, sizey], &rgba))
     }
 
+    #[deprecated]
     pub fn read_tile(&self, tile_descriptor: &TileDescriptor) -> Result<Buffer<f32>> {
         let raster_band = self.rasterband(tile_descriptor.band)?;
         let raster_size = self.raster_size();
@@ -346,6 +358,7 @@ impl RasterHandler {
         Ok(buffer)
     }
 
+    #[deprecated = "unused will keep as model"]
     pub fn tile_to_texture_direct_par(
         &self,
         tile_descriptor: TileDescriptor,
@@ -365,12 +378,6 @@ impl RasterHandler {
         // Output buffer size after downsampling — GDAL will decimate/resample
         // while reading when this is smaller than window_size.
         let (out_width, out_height) = pixel_bbox.size_with_downsampling(downsampling);
-
-        // println!("raster size: {} {}", raster_size.0, raster_size.1);
-        // println!("tile size: {} {}", window_size.0, window_size.1);
-        // println!("offset: {} {}", offset.0, offset.1);
-        // println!("downsample size: {} {}", out_width, out_height);
-        // println!("proposition: {}", raster_size.1 - pixel_bbox.ymax());
 
         let array = raster_band.read_as::<f32>(
             (offset.0 as isize, offset.1 as isize),
@@ -432,7 +439,7 @@ impl RasterHandler {
         })
     }
 
-    pub fn request_cache_tiles2(
+    pub fn request_cache_tiles(
         &mut self,
         tile_descriptions: &Vec<TileDescriptor>,
         view_center: PlotPoint,
@@ -442,7 +449,7 @@ impl RasterHandler {
         for tile in self.texture_worker.poll_results() {
             self.pending_tiles.remove(&tile.tile_descriptor);
             self.texture_cache
-                .insert(tile.tile_descriptor.clone(), tile.texture);
+                .insert(tile.tile_descriptor.clone(), tile);
         }
 
         // Split requested descriptors into cache hits and misses
@@ -450,11 +457,21 @@ impl RasterHandler {
         let mut hits: Vec<Tile> = Vec::with_capacity(tile_descriptions.len());
         for td in tile_descriptions {
             match self.texture_cache.get(td) {
-                Some(texture) => hits.push(Tile {
-                    tile_descriptor: td.clone(),
-                    texture,
-                }),
+                Some(tile) => hits.push(tile),
                 None => missing.push(td.clone()),
+            }
+        }
+
+        // Guard against tiles not fitting in memory
+        if let Some(first_hit) = hits.first() {
+            let texture_size = first_hit.texture.byte_size();
+            let hits_size = hits.len() * texture_size;
+            let capacity = self.texture_cache.capacity() as usize;
+            if hits_size < capacity {
+                let nb_texture_fitting = (capacity - hits_size)
+                    .div_ceil(texture_size)
+                    .min(missing.len());
+                missing.truncate(nb_texture_fitting);
             }
         }
 
@@ -484,67 +501,24 @@ impl RasterHandler {
             let cache_weight = self.texture_cache.weight().div_ceil(1024 * 1024);
             println!("Number of elements in cache: {} textures", cache_len);
             println!("Weight of elements in cache: {} MB", cache_weight);
+            println!(
+                "Total memory use in cache: {} MB",
+                self.texture_cache
+                    .memory_used()
+                    .total()
+                    .div_ceil(1024 * 1024)
+            )
         }
 
         Ok(hits)
     }
 
-    pub fn refresh_cache(&mut self) {
-        self.texture_cache = TextureCache::with_weighter(500, 80 * 1024 * 1024, TileWeighter);
-    }
-
-    pub fn request_cache_tiles(
-        &mut self,
-        tile_descriptions: &Vec<TileDescriptor>,
-        ui: &mut egui::Ui,
-    ) -> Result<Vec<Tile>> {
-        // Split requested descriptors into hits and misses
-        let mut missing: Vec<TileDescriptor> = Vec::new();
-        let mut hits: Vec<(TileDescriptor, TextureHandle)> =
-            Vec::with_capacity(tile_descriptions.len());
-
-        for td in tile_descriptions {
-            match self.texture_cache.get(td) {
-                Some(handle) => hits.push((td.clone(), handle)),
-                None => missing.push(td.clone()),
-            }
-        }
-
-        // Load whatever wasn't in the cache
-        let new_tiles: Vec<Tile> = if missing.is_empty() {
-            Vec::new()
-        } else {
-            missing
-                .into_iter()
-                .map(|td| self.tile_to_texture_direct_par(td, ui))
-                .collect::<Result<Vec<Tile>>>()?
-        };
-
-        // Insert newly loaded tiles into the cache
-        for tile in &new_tiles {
-            self.texture_cache
-                .insert(tile.tile_descriptor.clone(), tile.texture.clone());
-        }
-
-        // Combine cache hits + freshly loaded tiles
-        let mut result: Vec<Tile> = hits
-            .into_iter()
-            .map(|(tile_descriptor, texture)| Tile {
-                tile_descriptor,
-                texture,
-            })
-            .collect();
-        result.extend(new_tiles);
-
-        let cache_len = self.texture_cache.len();
-        let cache_weight = self.texture_cache.weight().div_ceil(1024 * 1024);
-
-        if cfg!(debug_assertions) {
-            println!("Number of elements in cache: {} textures", cache_len);
-            println!("Weight of elements in cache: {} MB", cache_weight);
-        }
-
-        Ok(result)
+    pub fn refresh_cache(&mut self, cache_size: u64) {
+        self.texture_cache = TextureCache::with_weighter(
+            Self::CACHE_EXPECTED_MAXIMUM_ELEMENTS,
+            cache_size,
+            TileWeighter,
+        );
     }
 }
 

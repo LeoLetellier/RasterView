@@ -1,5 +1,14 @@
 # 🎨 Colormaps 🔬
 
+
+Minimal python project for cmap cpt files generation:
+```shell
+uv run ./fetch_cmocean.py
+uv run ./fetch_matplotlib.py
+uv run ./fetch_scm.py
+```
+
+
 ## **cmocean**
 
 Colormap setup for standardizing commonly-plotting oceanographic variables.
@@ -21,7 +30,6 @@ matplotlib: plotting with Python.
 * [Repository](https://github.com/matplotlib/matplotlib)
 * License: Python Software Foundation License (License agreement for matplotlib versions 1.3.0 and later) 
 * doi: [https://doi.org/10.5281/zenodo.592536]
-
 
 ## **SCM**
 

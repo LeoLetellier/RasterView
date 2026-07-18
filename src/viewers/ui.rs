@@ -6,20 +6,22 @@ use egui_plot::{Plot, PlotPoint, PlotPoints, PlotUi, Polygon};
 
 impl Viewer {
     pub fn ui(&mut self, ui: &mut Ui) {
+        if cfg!(debug_assertions) {
+            let context_count = ui.ctx().tex_manager().read().allocated().count();
+            println!("Context count: {}", context_count);
+        }
+
         let tiles_needed = self.need_tiles();
         let Some(rh) = &mut self.raster_handler else {
             return;
         };
-        // let tiles = tiles_needed
-        //     .clone()
-        //     .map(|tn| rh.request_cache_tiles(&tn, ui).ok())
-        //     .flatten();
+
         let last_view_center = self.state.last_bounds.map(|lb| lb.center());
         let tiles = tiles_needed
             .clone()
             .zip(last_view_center)
             .map(|(tn, lvc)| {
-                rh.request_cache_tiles2(&tn, lvc, self.view_mode.clone())
+                rh.request_cache_tiles(&tn, lvc, self.view_mode.clone())
                     .ok()
             })
             .flatten();
@@ -28,25 +30,40 @@ impl Viewer {
         let mut last_bounds = None;
         let mut last_screen_size = None;
 
-        let plot_response = Plot::new("main_plot")
-            .data_aspect(1.0)
-            .pan_pointer_button(egui::PointerButton::Primary)
-            .boxed_zoom_pointer_button(egui::PointerButton::Secondary)
-            .allow_scroll(false)
-            .allow_zoom(true)
-            .show_grid(false)
-            .show(ui, |plot_ui| {
-                let rect = plot_ui.response().rect;
-                last_screen_size = Some((rect.width() as f64 * ppp, rect.height() as f64 * ppp));
-                last_bounds = Some(plot_ui.plot_bounds());
+        let raster_size = rh.raster_size();
+        // Avoid weird default plot position
+        let plot = if raster_size.0 > raster_size.1 {
+            Plot::new("main_plot")
+                .default_x_bounds(-0.1 * raster_size.0 as f64, 1.1 * raster_size.0 as f64)
+                .data_aspect(1.0)
+                .pan_pointer_button(egui::PointerButton::Primary)
+                .boxed_zoom_pointer_button(egui::PointerButton::Secondary)
+                .allow_scroll(false)
+                .allow_zoom(true)
+                .show_grid(false)
+        } else {
+            Plot::new("main_plot")
+                .default_x_bounds(-0.1 * raster_size.1 as f64, 1.1 * raster_size.1 as f64)
+                .data_aspect(1.0)
+                .pan_pointer_button(egui::PointerButton::Primary)
+                .boxed_zoom_pointer_button(egui::PointerButton::Secondary)
+                .allow_scroll(false)
+                .allow_zoom(true)
+                .show_grid(false)
+        };
 
-                tiles.map(|ot| ot.iter().for_each(|t| t.plot_ui(plot_ui)));
-                if cfg!(debug_assertions) {
-                    if let Some(tiles) = tiles_needed {
-                        tiles.iter().for_each(|t| t.ui_tile_bounds(plot_ui));
-                    }
+        let plot_response = plot.show(ui, |plot_ui| {
+            let rect = plot_ui.response().rect;
+            last_screen_size = Some((rect.width() as f64 * ppp, rect.height() as f64 * ppp));
+            last_bounds = Some(plot_ui.plot_bounds());
+
+            tiles.map(|ot| ot.iter().for_each(|t| t.plot_ui(plot_ui)));
+            if cfg!(debug_assertions) {
+                if let Some(tiles) = tiles_needed {
+                    tiles.iter().for_each(|t| t.ui_tile_bounds(plot_ui));
                 }
-            });
+            }
+        });
 
         self.state.last_screen_size = last_screen_size;
         self.state.last_bounds = last_bounds;

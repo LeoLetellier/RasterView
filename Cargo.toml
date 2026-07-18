@@ -17,25 +17,34 @@ build = "build.rs"
 [dependencies]
 anyhow = "1.0.103"
 clap = "4.6.1"
-eframe = "0.35.0"
+eframe = { version = "0.35.0" }
 egui = "0.35.0"
 egui-phosphor = { git = "https://github.com/crumblingstatue/egui-phosphor", branch = "egui-035", features = ["bold", "fill", "light", "thin"] }
 egui_extras = "0.35.0"
 egui_plot = "0.36.0"
 env_logger = "0.11.11"
-geo = "0.33.1"
+# geo = "0.33.1"
 log = "0.4.33"
-ndarray = { version = "0.17.2", features = ["rayon"] }
+# ndarray = { version = "0.17.2", features = ["rayon"] }
 num-traits = "0.2.19"
 quick_cache = "0.7.0"
 rayon = "1.12.0"
 rfd = "0.17.2"
-serde = { version = "1.0.228", features = ["derive"] }
 
 [target.'cfg(not(windows))'.dependencies]
 # Generate bindings at compile time (better but need deps - clang)
-gdal = { version = "0.19", features = ["bindgen", "ndarray"] }
+gdal = { version = "0.19", features = ["bindgen"] }
 
 [target.'cfg(windows)'.dependencies]
 # Fetch precompiled bindings
-gdal = { version = "0.19", features = ["ndarray"] }
+gdal = { version = "0.19" }
+
+[profile.release]
+opt-level = 3 # default
+lto = "fat" # link time optimizations
+codegen-units = 1 # parallel compiling units
+panic = "abort" # dont unwind panics
+strip = true # remove symbols
+
+# [profile.dev.package."*"]
+# opt-level = 2 # optimize a bit deps on debug

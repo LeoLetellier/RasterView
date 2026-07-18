@@ -1,0 +1,10 @@
+[project]
+name = "colormaps"
+version = "0.1.0"
+description = "Minimal deps for fetching colormaps"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "matplotlib>=3.11.1",
+    "numpy>=2.5.1",
+]

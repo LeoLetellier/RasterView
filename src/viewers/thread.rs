@@ -65,10 +65,14 @@ pub fn spawn_worker(
         // Process every queued job in order — don't collapse to "latest only"
         // anymore, since jobs now represent a real backlog of missing tiles.
         while let Ok((tile_descriptor, view)) = job_rx.recv() {
-            // Check if outdated
+            if cfg!(debug_assertions) {
+                println!("Loading tile: {}", tile_descriptor.name());
+            }
+            // Check if list is outdated
             if !wanted.lock().unwrap().contains(&tile_descriptor) {
                 continue;
             }
+            // Read tile from file
             let Ok(buffer) = tile_descriptor.read_buffer(&dataset) else {
                 continue;
             };
@@ -77,16 +81,20 @@ pub fn spawn_worker(
                 continue;
             }
 
+            // Convert raw tile to RGBA
             let image_color = view.color.buffer_to_colorimage(buffer);
 
+            // Register RGBA as texture
             let texture_handle = ctx.load_texture(
                 format!("texture_tile_{}", tile_descriptor.name()),
                 image_color,
                 egui::TextureOptions::NEAREST,
             );
 
+            // Create the tile with the texture and tile description
             let tile = Tile::new(tile_descriptor, texture_handle);
 
+            // Send the resulting tile to main thread
             if result_tx.send(tile).is_ok() {
                 ctx.request_repaint(); // wake the UI so it picks this up
             }

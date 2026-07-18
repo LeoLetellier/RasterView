@@ -21,20 +21,11 @@ use cmap::ColorInterpretation;
 pub struct Viewer {
     /// Actual raster
     pub raster_handler: Option<RasterHandler>,
-    /// Active View
-    // pub live_bbox: GeoBox,
-    // pub downscaling: usize,
-    /// User parameters
+    /// View handler
     pub view_mode: ViewMode,
-    /// Caching
-    // pub cache: Option<CacheHandler>,
-    // Texture
-    // pub color_image: Option<ColorImage>,
-
-    // TODO change vec to LRU eviction cache
-    // pub color_images: Vec<Tile>,
-    // pub texture_cache: TextureCache,
+    /// User parameters for the viewer
     pub parameters: ViewerParams,
+    /// Some state parameters for the viewer
     pub state: ViewerState,
 }
 
@@ -50,8 +41,7 @@ impl Default for ViewerParams {
         ViewerParams {
             tile_size: 256,
             viewport_padding: 0.0,
-            cache_size: 64 * 1024 * 1024, // 64MB
-                                          // TODO use cache.set_capacity to live update it
+            cache_size: 256 * 1024 * 1024, // 256MB
         }
     }
 }
@@ -66,41 +56,24 @@ pub struct ViewerState {
 impl Viewer {
     pub fn with_raster(path: &Path, ctx: egui::Context) -> Result<Self> {
         let mut viewer = Self::default();
-        let raster_handler = RasterHandler::new(path, ctx)?;
+        let raster_handler = RasterHandler::new(path, ctx, viewer.parameters.cache_size)?;
         viewer.raster_handler = Some(raster_handler);
-
-        // viewer.color_image = if let Some(rh) = &viewer.raster_handler {
-        //     rh.to_colorimage_direct_par(1).ok()
-        // } else {
-        //     None
-        // };
 
         Ok(viewer)
     }
 
     pub fn refresh_cache(&mut self) {
         if let Some(rh) = &mut self.raster_handler {
-            rh.refresh_cache();
+            rh.refresh_cache(self.parameters.cache_size);
         }
     }
 }
 
 impl Default for Viewer {
     fn default() -> Self {
-        // let live_bbox = [0.0, 1.0, 0.0, 1.0].into();
-        // Initialize cache for around 500 objects
-        // with weight capacity of 64 MB
-        let cache = TextureCache::with_weighter(500, 64 * 1024 * 1024, TileWeighter);
-
         Self {
             raster_handler: None,
-            // live_bbox,
-            // downscaling: 0,
             view_mode: Default::default(),
-            // cache: None,
-            // color_image: None,
-            // color_images: Default::default(),
-            // texture_cache: cache,
             parameters: Default::default(),
             state: Default::default(),
         }

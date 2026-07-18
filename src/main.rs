@@ -11,6 +11,7 @@ fn main() -> eframe::Result {
         viewport: egui::ViewportBuilder::default(),
         ..Default::default()
     };
+
     eframe::run_native(
         "RasterView",
         native_options,

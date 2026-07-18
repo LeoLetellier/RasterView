@@ -1,12 +1,22 @@
 use egui::{ColorImage, TextBuffer};
 use gdal::raster::Buffer;
 use rayon::prelude::*;
-use serde::Deserialize;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-// static COLORMAP_BLOB: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/colormaps.bin"));
-// include!(concat!(env!("OUT_DIR"), "/colormaps_registry.rs"));
+static COLORMAP_BLOB: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/colormaps.bin"));
+
+pub struct ColormapEntry {
+    pub name: &'static str,
+    pub cmap_type: ColorMapType,
+    pub offset: usize,
+    pub len: usize,
+    pub below: [u8; 4],
+    pub above: [u8; 4],
+    pub nan: [u8; 4],
+}
+
+include!(concat!(env!("OUT_DIR"), "/colormaps_registry.rs"));
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct ColorInterpretation {
@@ -74,7 +84,7 @@ pub enum ColorRanging {
     GdalInterpretation,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 struct ColorMapScheme {
     name: String,
     below: Option<[u8; 4]>,
@@ -108,7 +118,7 @@ impl ColorMapLut {
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
 enum ColorMapType {
-    Sequencial,
+    Sequential,
     Divergent,
     Cyclic,
     Other,
@@ -147,7 +157,7 @@ impl Default for ColorMap {
             below: [0, 0, 0, 255],       // clamp to black
             above: [255, 255, 255, 255], // clamp to white
             nan: [0, 0, 0, 0],           // transparent
-            cmap_type: ColorMapType::Sequencial,
+            cmap_type: ColorMapType::Sequential,
         }
     }
 }
@@ -155,22 +165,29 @@ impl Default for ColorMap {
 impl TryFrom<&str> for ColorMap {
     type Error = anyhow::Error;
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        todo!()
+        ColorMap::from_name(value).ok_or_else(|| anyhow::anyhow!("unknown colormap: {value}"))
     }
 }
 
 impl ColorMap {
     pub fn from_name(name: &str) -> Option<Self> {
-        todo!()
-        // let (_, offset, len) = COLORMAPS.iter().find(|(n, _, _)| *n == name)?;
-        // let data = &COLORMAP_BLOB[*offset..*offset + len * 4];
-        // Some(ColorMap {
-        //     lut: ColorMapLut { data },
-        //     below: [0, 0, 0, 255],
-        //     above: [255, 255, 255, 255],
-        //     nan: [0, 0, 0, 0],
-        //     cmap_type: ColorMapType::Sequencial,
-        // })
+        let entry = COLORMAPS.iter().find(|e| e.name == name)?;
+        let start = entry.offset * 4;
+        let end = start + entry.len * 4;
+        Some(ColorMap {
+            lut: ColorMapLut {
+                data: &COLORMAP_BLOB[start..end],
+            },
+            below: entry.below,
+            above: entry.above,
+            nan: entry.nan,
+            cmap_type: entry.cmap_type.clone(),
+        })
+    }
+
+    /// Handy for populating a UI dropdown.
+    pub fn names() -> impl Iterator<Item = &'static str> {
+        COLORMAPS.iter().map(|e| e.name)
     }
 
     pub fn apply_into(
