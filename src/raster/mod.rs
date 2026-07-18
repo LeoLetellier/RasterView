@@ -3,29 +3,35 @@ use egui::ColorImage;
 use egui_plot::PlotPoint;
 use gdal::{
     Dataset, Metadata,
-    raster::{Buffer, RasterBand, ResampleAlg},
+    raster::{Buffer, Histogram, RasterBand, ResampleAlg},
 };
 use rayon::prelude::*;
 use std::{ops::Deref, path::Path};
 
-use crate::viewers::{
-    ViewMode,
-    coords::{self, Bbox, GeoBox, GeoTransform, PixelBox},
-    thread::TextureWorker,
-    tiler::{TextureCache, Tile, TileDescriptor, TileWeighter},
+use crate::{
+    raster::stats::BandStatStatus,
+    viewers::{
+        ViewMode,
+        coords::{self, Bbox, GeoBox, GeoTransform, PixelBox},
+        thread::TextureWorker,
+        tiler::{TextureCache, Tile, TileDescriptor, TileWeighter},
+    },
 };
 use std::collections::HashSet;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
+pub mod stats;
 pub mod ui;
 
 #[derive(Debug)]
 pub struct RasterHandler {
+    path: String,
     gdal_dataset: Dataset,
     raster_metadata: RasterMetadata,
     texture_worker: TextureWorker,
     texture_cache: TextureCache,
     pending_tiles: HashSet<TileDescriptor>,
+    pub bands_stats: Arc<Mutex<Vec<BandStatStatus>>>,
 }
 
 #[derive(Debug)]
@@ -220,12 +226,22 @@ impl RasterHandler {
             TileWeighter,
         );
 
+        let bands_stats = Arc::new(Mutex::new(
+            gdal_dataset
+                .rasterbands()
+                .enumerate()
+                .map(|_| BandStatStatus::NotLoaded)
+                .collect(),
+        ));
+
         Ok(Self {
+            path: path.as_ref().to_string_lossy().into_owned(),
             gdal_dataset,
             raster_metadata,
             texture_worker,
             texture_cache,
             pending_tiles: Default::default(),
+            bands_stats,
         })
     }
 

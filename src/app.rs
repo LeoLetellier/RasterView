@@ -267,6 +267,16 @@ impl RasterView {
                 {
                     if let Some(view) = &mut self.viewer {
                         let _ = view.refresh_cache();
+                        if cfg!(debug_assertions) {
+                            if let Some(rh) = &mut view.raster_handler {
+                                let minmax = rh.band_minmax(1);
+                                let actual_state = rh.bands_stats.clone();
+                                println!(
+                                    "\n>>>>>>    Got minmax: {:?} with status {:?}    <<<<<<\n",
+                                    minmax, actual_state
+                                );
+                            }
+                        }
                     }
                 }
             });
