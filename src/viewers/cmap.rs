@@ -4,6 +4,8 @@ use rayon::prelude::*;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
+use crate::viewers::cmap::NormMode::PerBand;
+
 static COLORMAP_BLOB: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/colormaps.bin"));
 
 pub struct ColormapEntry {
@@ -23,6 +25,13 @@ pub struct ColorInterpretation {
     ranging_mode: ColorRanging,
     ranging_values: (f32, f32),
     colormap: ColorMap,
+    norm_mode: NormMode,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum NormMode {
+    PerBand,
+    AllBands,
 }
 
 impl Default for ColorInterpretation {
@@ -31,6 +40,7 @@ impl Default for ColorInterpretation {
             ranging_mode: ColorRanging::MinMax,
             ranging_values: (0.0, 1.0),
             colormap: ColorMap::default(),
+            norm_mode: PerBand,
         }
     }
 }
@@ -50,16 +60,14 @@ impl Hash for ColorInterpretation {
 
 impl ColorInterpretation {
     pub fn new(colormap: ColorMap) -> Self {
-        ColorInterpretation {
-            ranging_mode: ColorRanging::MinMax,
-            ranging_values: (0.0, 1.0),
-            colormap,
-        }
+        let mut ci = ColorInterpretation::default();
+        ci.colormap = colormap;
+        ci
     }
 }
 
 impl ColorInterpretation {
-    pub fn buffer_to_colorimage(&self, buffer: Buffer<f32>) -> Arc<ColorImage> {
+    pub fn panchro_buffer_to_colorimage(&self, buffer: Buffer<f32>) -> Arc<ColorImage> {
         let (buffer_width, buffer_height) = buffer.shape();
         let data = buffer.data();
 
@@ -73,6 +81,13 @@ impl ColorInterpretation {
             [buffer_width, buffer_height],
             &color_data,
         ))
+    }
+
+    pub fn rgb_buffers_to_colorimage(
+        &self,
+        buffers: (Buffer<f32>, Buffer<f32>, Buffer<f32>),
+    ) -> Arc<ColorImage> {
+        todo!()
     }
 }
 

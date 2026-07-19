@@ -11,7 +11,7 @@ use std::{ops::Deref, path::Path};
 use crate::{
     raster::stats::BandStatStatus,
     viewers::{
-        ViewMode,
+        ActiveViewer, ViewMode,
         coords::{self, Bbox, GeoBox, GeoTransform, PixelBox},
         thread::TextureWorker,
         tiler::{TextureCache, Tile, TileDescriptor, TileWeighter},
@@ -299,161 +299,161 @@ impl RasterHandler {
         Ok(ColorImage::from_rgba_unmultiplied([sizex, sizey], &rgba))
     }
 
-    #[deprecated]
-    pub fn to_colorimage_direct_par(&self, band: usize) -> Result<ColorImage> {
-        let raster_band = self.rasterband(band)?;
-        let (sizex, sizey) = self.raster_size();
-        let array = raster_band.read_as::<f32>((0, 0), (sizex, sizey), (sizex, sizey), None)?;
-        let data: &[f32] = &array.data();
+    // #[deprecated]
+    // pub fn to_colorimage_direct_par(&self, band: usize) -> Result<ColorImage> {
+    //     let raster_band = self.rasterband(band)?;
+    //     let (sizex, sizey) = self.raster_size();
+    //     let array = raster_band.read_as::<f32>((0, 0), (sizex, sizey), (sizex, sizey), None)?;
+    //     let data: &[f32] = &array.data();
 
-        // Parallel min/max reduction, ignoring NaN.
-        let (mut min, mut max) = data
-            .par_iter()
-            .filter(|v| v.is_finite())
-            .fold(
-                || (f32::INFINITY, f32::NEG_INFINITY),
-                |(min, max), &v| (min.min(v), max.max(v)),
-            )
-            .reduce(
-                || (f32::INFINITY, f32::NEG_INFINITY),
-                |(min1, max1), (min2, max2)| (min1.min(min2), max1.max(max2)),
-            );
+    //     // Parallel min/max reduction, ignoring NaN.
+    //     let (mut min, mut max) = data
+    //         .par_iter()
+    //         .filter(|v| v.is_finite())
+    //         .fold(
+    //             || (f32::INFINITY, f32::NEG_INFINITY),
+    //             |(min, max), &v| (min.min(v), max.max(v)),
+    //         )
+    //         .reduce(
+    //             || (f32::INFINITY, f32::NEG_INFINITY),
+    //             |(min1, max1), (min2, max2)| (min1.min(min2), max1.max(max2)),
+    //         );
 
-        let range = if (max - min).abs() > f32::EPSILON {
-            max - min
-        } else {
-            1.0
-        };
-        if !min.is_finite() || !max.is_finite() {
-            min = 0.0;
-        }
+    //     let range = if (max - min).abs() > f32::EPSILON {
+    //         max - min
+    //     } else {
+    //         1.0
+    //     };
+    //     if !min.is_finite() || !max.is_finite() {
+    //         min = 0.0;
+    //     }
 
-        // Parallel conversion of f32 -> RGBA8, preserving order via par_iter + flat_map_iter.
-        let rgba: Vec<u8> = data
-            .par_iter()
-            .flat_map_iter(|&v| {
-                let byte = if v.is_finite() {
-                    (((v - min) / range) * 255.0).clamp(0.0, 255.0) as u8
-                } else {
-                    0
-                };
-                [byte, byte, byte, 255]
-            })
-            .collect();
+    //     // Parallel conversion of f32 -> RGBA8, preserving order via par_iter + flat_map_iter.
+    //     let rgba: Vec<u8> = data
+    //         .par_iter()
+    //         .flat_map_iter(|&v| {
+    //             let byte = if v.is_finite() {
+    //                 (((v - min) / range) * 255.0).clamp(0.0, 255.0) as u8
+    //             } else {
+    //                 0
+    //             };
+    //             [byte, byte, byte, 255]
+    //         })
+    //         .collect();
 
-        Ok(ColorImage::from_rgba_unmultiplied([sizex, sizey], &rgba))
-    }
+    //     Ok(ColorImage::from_rgba_unmultiplied([sizex, sizey], &rgba))
+    // }
 
-    #[deprecated]
-    pub fn read_tile(&self, tile_descriptor: &TileDescriptor) -> Result<Buffer<f32>> {
-        let raster_band = self.rasterband(tile_descriptor.band)?;
-        let raster_size = self.raster_size();
-        let nodata = raster_band.no_data_value();
+    // #[deprecated]
+    // pub fn read_tile(&self, tile_descriptor: &TileDescriptor) -> Result<Buffer<f32>> {
+    //     let raster_band = self.rasterband(tile_descriptor.band)?;
+    //     let raster_size = self.raster_size();
+    //     let nodata = raster_band.no_data_value();
 
-        let pixel_bbox = &tile_descriptor.pixel_bbox;
+    //     let pixel_bbox = &tile_descriptor.pixel_bbox;
 
-        // Full-resolution window into the raster we want to read
-        // Count from ymax for Y direction offset
-        let offset = (pixel_bbox.xmin(), raster_size.1 - pixel_bbox.ymax());
-        let window_size = (pixel_bbox.width(), pixel_bbox.height());
+    //     // Full-resolution window into the raster we want to read
+    //     // Count from ymax for Y direction offset
+    //     let offset = (pixel_bbox.xmin(), raster_size.1 - pixel_bbox.ymax());
+    //     let window_size = (pixel_bbox.width(), pixel_bbox.height());
 
-        // Output buffer size after downsampling — GDAL will decimate/resample
-        // while reading when this is smaller than window_size.
-        let buffer_size = tile_descriptor.tile_pixel_size();
+    //     // Output buffer size after downsampling — GDAL will decimate/resample
+    //     // while reading when this is smaller than window_size.
+    //     let buffer_size = tile_descriptor.tile_pixel_size();
 
-        let mut buffer = raster_band.read_as::<f32>(
-            (offset.0 as isize, offset.1 as isize),
-            window_size,
-            buffer_size,
-            None,
-        )?;
+    //     let mut buffer = raster_band.read_as::<f32>(
+    //         (offset.0 as isize, offset.1 as isize),
+    //         window_size,
+    //         buffer_size,
+    //         None,
+    //     )?;
 
-        // Treat ndv and non finite nbs as NaN
-        clean_nodata_and_nonfinite(&mut buffer, nodata);
+    //     // Treat ndv and non finite nbs as NaN
+    //     clean_nodata_and_nonfinite(&mut buffer, nodata);
 
-        Ok(buffer)
-    }
+    //     Ok(buffer)
+    // }
 
-    #[deprecated = "unused will keep as model"]
-    pub fn tile_to_texture_direct_par(
-        &self,
-        tile_descriptor: TileDescriptor,
-        ui: &mut egui::Ui,
-    ) -> Result<Tile> {
-        let raster_band = self.rasterband(tile_descriptor.band)?;
-        let raster_size = self.raster_size();
+    // #[deprecated = "unused will keep as model"]
+    // pub fn tile_to_texture_direct_par(
+    //     &self,
+    //     tile_descriptor: TileDescriptor,
+    //     ui: &mut egui::Ui,
+    // ) -> Result<Tile> {
+    //     let raster_band = self.rasterband(tile_descriptor)?;
+    //     let raster_size = self.raster_size();
 
-        let pixel_bbox = &tile_descriptor.pixel_bbox;
-        let downsampling = tile_descriptor.downsampling;
+    //     let pixel_bbox = &tile_descriptor.pixel_bbox;
+    //     let downsampling = tile_descriptor.downsampling;
 
-        // Full-resolution window into the raster we want to read
-        // let offset = (pixel_bbox.xmin(), pixel_bbox.ymin());
-        let offset = (pixel_bbox.xmin(), raster_size.1 - pixel_bbox.ymax());
-        let window_size = (pixel_bbox.width(), pixel_bbox.height());
+    //     // Full-resolution window into the raster we want to read
+    //     // let offset = (pixel_bbox.xmin(), pixel_bbox.ymin());
+    //     let offset = (pixel_bbox.xmin(), raster_size.1 - pixel_bbox.ymax());
+    //     let window_size = (pixel_bbox.width(), pixel_bbox.height());
 
-        // Output buffer size after downsampling — GDAL will decimate/resample
-        // while reading when this is smaller than window_size.
-        let (out_width, out_height) = pixel_bbox.size_with_downsampling(downsampling);
+    //     // Output buffer size after downsampling — GDAL will decimate/resample
+    //     // while reading when this is smaller than window_size.
+    //     let (out_width, out_height) = pixel_bbox.size_with_downsampling(downsampling);
 
-        let array = raster_band.read_as::<f32>(
-            (offset.0 as isize, offset.1 as isize),
-            window_size,
-            (out_width, out_height),
-            None,
-        )?;
-        let data: &[f32] = &array.data();
+    //     let array = raster_band.read_as::<f32>(
+    //         (offset.0 as isize, offset.1 as isize),
+    //         window_size,
+    //         (out_width, out_height),
+    //         None,
+    //     )?;
+    //     let data: &[f32] = &array.data();
 
-        // Parallel min/max reduction, ignoring NaN.
-        let (mut min, mut max) = data
-            .par_iter()
-            .filter(|v| v.is_finite())
-            .fold(
-                || (f32::INFINITY, f32::NEG_INFINITY),
-                |(min, max), &v| (min.min(v), max.max(v)),
-            )
-            .reduce(
-                || (f32::INFINITY, f32::NEG_INFINITY),
-                |(min1, max1), (min2, max2)| (min1.min(min2), max1.max(max2)),
-            );
+    //     // Parallel min/max reduction, ignoring NaN.
+    //     let (mut min, mut max) = data
+    //         .par_iter()
+    //         .filter(|v| v.is_finite())
+    //         .fold(
+    //             || (f32::INFINITY, f32::NEG_INFINITY),
+    //             |(min, max), &v| (min.min(v), max.max(v)),
+    //         )
+    //         .reduce(
+    //             || (f32::INFINITY, f32::NEG_INFINITY),
+    //             |(min1, max1), (min2, max2)| (min1.min(min2), max1.max(max2)),
+    //         );
 
-        let range = if (max - min).abs() > f32::EPSILON {
-            max - min
-        } else {
-            1.0
-        };
-        if !min.is_finite() || !max.is_finite() {
-            min = 0.0;
-        }
+    //     let range = if (max - min).abs() > f32::EPSILON {
+    //         max - min
+    //     } else {
+    //         1.0
+    //     };
+    //     if !min.is_finite() || !max.is_finite() {
+    //         min = 0.0;
+    //     }
 
-        // Parallel conversion of f32 -> RGBA8, preserving order via par_iter + flat_map_iter.
-        let rgba: Vec<u8> = data
-            .par_iter()
-            .flat_map_iter(|&v| {
-                let byte = if v.is_finite() {
-                    (((v - min) / range) * 255.0).clamp(0.0, 255.0) as u8
-                } else {
-                    0
-                };
-                [byte, byte, byte, 255]
-            })
-            .collect();
+    //     // Parallel conversion of f32 -> RGBA8, preserving order via par_iter + flat_map_iter.
+    //     let rgba: Vec<u8> = data
+    //         .par_iter()
+    //         .flat_map_iter(|&v| {
+    //             let byte = if v.is_finite() {
+    //                 (((v - min) / range) * 255.0).clamp(0.0, 255.0) as u8
+    //             } else {
+    //                 0
+    //             };
+    //             [byte, byte, byte, 255]
+    //         })
+    //         .collect();
 
-        let image_cache = Arc::new(ColorImage::from_rgba_unmultiplied(
-            [out_width, out_height],
-            &rgba,
-        ));
+    //     let image_cache = Arc::new(ColorImage::from_rgba_unmultiplied(
+    //         [out_width, out_height],
+    //         &rgba,
+    //     ));
 
-        let texure_handle = ui.load_texture(
-            format!("texture_tile_{}", tile_descriptor.name()),
-            image_cache,
-            egui::TextureOptions::NEAREST,
-        );
+    //     let texure_handle = ui.load_texture(
+    //         format!("texture_tile_{}", tile_descriptor.name()),
+    //         image_cache,
+    //         egui::TextureOptions::NEAREST,
+    //     );
 
-        Ok(Tile {
-            tile_descriptor,
-            texture: texure_handle,
-        })
-    }
+    //     Ok(Tile {
+    //         tile_descriptor,
+    //         texture: texure_handle,
+    //     })
+    // }
 
     pub fn request_cache_tiles(
         &mut self,
@@ -539,8 +539,8 @@ impl RasterHandler {
 }
 
 impl TileDescriptor {
-    pub fn read_buffer(&self, dataset: &Dataset) -> Result<Buffer<f32>> {
-        let raster_band = dataset.rasterband(self.band)?;
+    pub fn read_buffer(&self, dataset: &Dataset, band: usize) -> Result<Buffer<f32>> {
+        let raster_band = dataset.rasterband(band)?;
         let raster_size = dataset.raster_size();
         let nodata = raster_band.no_data_value();
 
@@ -566,6 +566,20 @@ impl TileDescriptor {
         clean_nodata_and_nonfinite(&mut buffer, nodata);
 
         Ok(buffer)
+    }
+
+    pub fn read_3buffers(
+        &self,
+        dataset: &Dataset,
+        bands: (usize, usize, usize),
+    ) -> Result<(Buffer<f32>, Buffer<f32>, Buffer<f32>)> {
+        let (b0, b1, b2) = bands;
+
+        let buf0 = self.read_buffer(dataset, b0)?;
+        let buf1 = self.read_buffer(dataset, b1)?;
+        let buf2 = self.read_buffer(dataset, b2)?;
+
+        Ok((buf0, buf1, buf2))
     }
 }
 

@@ -1,5 +1,5 @@
-use crate::viewers::ViewMode;
 use crate::viewers::tiler::{Tile, TileDescriptor};
+use crate::viewers::{ActiveViewer, ViewMode};
 use anyhow::Result;
 use gdal::Dataset;
 use std::collections::HashSet;
@@ -72,18 +72,32 @@ pub fn spawn_worker(
             if !wanted.lock().unwrap().contains(&tile_descriptor) {
                 continue;
             }
-            // Read tile from file
-            let Ok(buffer) = tile_descriptor.read_buffer(&dataset) else {
-                continue;
+
+            let image_color = match view.active_viewer {
+                ActiveViewer::Panchro => {
+                    // Read tile from file
+                    let Ok(buffer) = tile_descriptor.read_buffer(&dataset, view.panchro_band)
+                    else {
+                        continue;
+                    };
+                    // Convert raw tile to RGBA
+                    view.color_interpretation
+                        .panchro_buffer_to_colorimage(buffer)
+                }
+                ActiveViewer::Color => {
+                    let Ok(buffers) = tile_descriptor.read_3buffers(&dataset, view.rgb_bands)
+                    else {
+                        continue;
+                    };
+                    // Convert raw tile to RGBA
+                    view.color_interpretation.rgb_buffers_to_colorimage(buffers)
+                }
             };
-            // Check again after read
+
+            // Check if list is outdated
             if !wanted.lock().unwrap().contains(&tile_descriptor) {
                 continue;
             }
-
-            // Convert raw tile to RGBA
-            let image_color = view.color.buffer_to_colorimage(buffer);
-
             // Register RGBA as texture
             let texture_handle = ctx.load_texture(
                 format!("texture_tile_{}", tile_descriptor.name()),

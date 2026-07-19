@@ -16,7 +16,6 @@ use std::path::PathBuf;
 pub struct RasterView {
     raster_path: Option<PathBuf>,
     viewer: Option<Viewer>,
-    // texture_worker: TextureWorker,
     left_panel_open: bool,
     left_panel: LeftPanel,
     right_panel_open: bool,
@@ -164,12 +163,10 @@ impl RasterView {
 
                 {
                     if let Some(viewer) = &self.viewer {
-                        if let Some(raster_handler) = &viewer.raster_handler {
-                            egui::ScrollArea::both().show(ui, |ui| {
-                                raster_handler.ui_dataset(ui);
-                                raster_handler.ui_bands(ui);
-                            });
-                        }
+                        egui::ScrollArea::both().show(ui, |ui| {
+                            viewer.raster_handler.ui_dataset(ui);
+                            viewer.raster_handler.ui_bands(ui);
+                        });
                     }
                 }
             }
@@ -221,12 +218,7 @@ impl RasterView {
                             let x_pos = px_pos.x.floor();
                             let y_pos = px_pos.y.floor();
 
-                            if let Some(gt) = view
-                                .raster_handler
-                                .as_ref()
-                                .map(|r| r.get_pixel_geotransform())
-                                .flatten()
-                            {
+                            if let Some(gt) = view.raster_handler.get_pixel_geotransform() {
                                 let geo_pos = gt.pixel_to_geo(x_pos, y_pos);
                                 ui.label(format!(" | geo: ({:.3},{:.3})", geo_pos.0, geo_pos.1));
                             }
@@ -268,14 +260,12 @@ impl RasterView {
                     if let Some(view) = &mut self.viewer {
                         let _ = view.refresh_cache();
                         if cfg!(debug_assertions) {
-                            if let Some(rh) = &mut view.raster_handler {
-                                let minmax = rh.band_minmax(1);
-                                let actual_state = rh.bands_stats.clone();
-                                println!(
-                                    "\n>>>>>>    Got minmax: {:?} with status {:?}    <<<<<<\n",
-                                    minmax, actual_state
-                                );
-                            }
+                            let minmax = view.raster_handler.band_minmax(1);
+                            let actual_state = view.raster_handler.bands_stats.clone();
+                            println!(
+                                "\n>>>>>>    Got minmax: {:?} with status {:?}    <<<<<<\n",
+                                minmax, actual_state
+                            );
                         }
                     }
                 }

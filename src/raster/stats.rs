@@ -11,7 +11,7 @@ use crate::raster::RasterHandler;
 
 impl RasterHandler {
     pub fn band_minmax(&mut self, band: usize) -> Option<(f64, f64)> {
-        self.ensure_loading(band);
+        self.ensure_stats_loaded(band);
         let cache = self.bands_stats.lock().unwrap();
         match cache.get(band - 1) {
             Some(BandStatStatus::Loaded(stats)) => Some((stats.min, stats.max)),
@@ -20,7 +20,7 @@ impl RasterHandler {
     }
 
     pub fn band_histogram(&mut self, band: usize) -> Option<(f64, f64, Vec<u64>)> {
-        self.ensure_loading(band);
+        self.ensure_stats_loaded(band);
         let cache = self.bands_stats.lock().unwrap();
         match cache.get(band) {
             Some(BandStatStatus::Loaded(stats)) => {
@@ -31,7 +31,7 @@ impl RasterHandler {
     }
 
     pub fn band_percentile(&mut self, band: usize, percentile: f64) -> Option<f64> {
-        self.ensure_loading(band);
+        self.ensure_stats_loaded(band);
         let cache = self.bands_stats.lock().unwrap();
         match cache.get(band) {
             Some(BandStatStatus::Loaded(stats)) => {
@@ -43,7 +43,7 @@ impl RasterHandler {
 
     /// If the band isn't loaded and isn't already loading, kick off a
     /// background thread to compute stats + histogram for it.
-    fn ensure_loading(&self, band: usize) {
+    pub fn ensure_stats_loaded(&self, band: usize) {
         {
             let cache = self.bands_stats.lock().unwrap();
             match cache.get(band - 1) {

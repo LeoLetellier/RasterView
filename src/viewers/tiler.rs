@@ -1,5 +1,5 @@
-use crate::viewers::Viewer;
 use crate::viewers::coords::{Bbox, GeoBox, PixelBox};
+use crate::viewers::{ActiveViewer, Viewer};
 
 use anyhow::{Result, anyhow};
 use egui::{TextureHandle, vec2};
@@ -18,19 +18,24 @@ use std::hash::Hash;
 impl Viewer {
     /// Determine the tiles needed for a specific viewport extent
     pub fn need_tiles(&self) -> Option<Vec<TileDescriptor>> {
-        let rh = self.raster_handler.as_ref()?;
+        let raster_size = self.raster_handler.raster_size();
         let lb = self.state.last_bounds?;
 
-        let (full_width, full_height) = rh.raster_size();
+        let (full_width, full_height) = raster_size;
 
         // Determine the current zoom
         let view_extent = (lb.width(), lb.height());
         let screen_size = self.state.last_screen_size?; // needs to be captured from plot_ui.response().rect
-        let raster_size = rh.raster_size();
 
         let downsampling: usize = self.need_zoom(view_extent, screen_size, raster_size)?;
         // Check against the viewmode for which band to load
-        let bands: Vec<usize> = self.view_mode.need_bands();
+        let bands: Vec<usize> = match self.view_mode.active_viewer {
+            ActiveViewer::Panchro => vec![self.view_mode.panchro_band],
+            ActiveViewer::Color => {
+                let bands = self.view_mode.rgb_bands;
+                vec![bands.0, bands.1, bands.2]
+            }
+        };
 
         // Check against viewport bounds to determine which tiles are needed
         let pixel_bboxes: Vec<PixelBox> = self.tile_in_view(
@@ -45,7 +50,6 @@ impl Viewer {
             .flat_map(|pixel_bbox| {
                 bands.iter().map(move |&band| TileDescriptor {
                     pixel_bbox: pixel_bbox.clone(),
-                    band,
                     downsampling,
                 })
             })
@@ -172,7 +176,6 @@ impl Viewer {
 #[derive(Debug, PartialEq, Hash, Eq, Clone)]
 pub struct TileDescriptor {
     pub pixel_bbox: PixelBox,
-    pub band: usize,
     pub downsampling: usize,
 }
 
@@ -187,8 +190,7 @@ impl TileDescriptor {
 
     pub fn name(&self) -> String {
         format!(
-            "b{}_s{}_x{}_xx{}_y{}_yy{}",
-            self.band,
+            "s{}_x{}_xx{}_y{}_yy{}",
             self.downsampling,
             self.pixel_bbox.xmin(),
             self.pixel_bbox.xmax(),
