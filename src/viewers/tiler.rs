@@ -17,7 +17,7 @@ use std::hash::Hash;
 
 impl Viewer {
     /// Determine the tiles needed for a specific viewport extent
-    pub fn need_tiles(&self) -> Option<Vec<TileDescriptor>> {
+    pub(crate) fn need_tiles(&self) -> Option<Vec<TileDescriptor>> {
         let raster_size = self.raster_handler.raster_size();
         let lb = self.state.last_bounds?;
 
@@ -174,21 +174,21 @@ impl Viewer {
 }
 
 #[derive(Debug, PartialEq, Hash, Eq, Clone)]
-pub struct TileDescriptor {
-    pub pixel_bbox: PixelBox,
-    pub downsampling: usize,
+pub(crate) struct TileDescriptor {
+    pub(crate) pixel_bbox: PixelBox,
+    pub(crate) downsampling: usize,
 }
 
 impl TileDescriptor {
-    pub fn tile_pixel_size(&self) -> (usize, usize) {
+    pub(crate) fn tile_pixel_size(&self) -> (usize, usize) {
         self.pixel_bbox.size_with_downsampling(self.downsampling)
     }
 
-    pub fn pixel_box(&self) -> &PixelBox {
+    pub(crate) fn pixel_box(&self) -> &PixelBox {
         &self.pixel_bbox
     }
 
-    pub fn name(&self) -> String {
+    pub(crate) fn name(&self) -> String {
         format!(
             "s{}_x{}_xx{}_y{}_yy{}",
             self.downsampling,
@@ -199,7 +199,7 @@ impl TileDescriptor {
         )
     }
 
-    pub fn distance_to(&self, point: PlotPoint) -> f64 {
+    pub(crate) fn distance_to(&self, point: PlotPoint) -> f64 {
         let center_point = self.pixel_bbox.center();
         let dx = center_point.x - point.x;
         let dy = center_point.y - point.y;
@@ -208,9 +208,9 @@ impl TileDescriptor {
 }
 
 #[derive(Clone)]
-pub struct Tile {
-    pub tile_descriptor: TileDescriptor,
-    pub texture: TextureHandle,
+pub(crate) struct Tile {
+    pub(crate) tile_descriptor: TileDescriptor,
+    pub(crate) texture: TextureHandle,
 }
 
 impl fmt::Debug for Tile {
@@ -233,13 +233,13 @@ impl fmt::Debug for Tile {
 // }
 
 impl Tile {
-    pub fn new(tile_descriptor: TileDescriptor, texture_handle: TextureHandle) -> Self {
+    pub(crate) fn new(tile_descriptor: TileDescriptor, texture_handle: TextureHandle) -> Self {
         Self {
             tile_descriptor,
             texture: texture_handle,
         }
     }
-    pub fn plot_ui(&self, plot_ui: &mut PlotUi) {
+    pub(crate) fn plot_ui(&self, plot_ui: &mut PlotUi) {
         let tile_name = self.tile_descriptor.name();
         plot_ui.image(PlotImage::new(
             format!("plot_tile_{tile_name}"),
@@ -254,7 +254,7 @@ impl Tile {
 }
 
 #[derive(Clone)]
-pub struct TileWeighter;
+pub(crate) struct TileWeighter;
 
 impl Weighter<TileDescriptor, Tile> for TileWeighter {
     fn weight(&self, _key: &TileDescriptor, val: &Tile) -> u64 {
@@ -267,4 +267,4 @@ impl Weighter<TileDescriptor, Tile> for TileWeighter {
 /// ```rs
 /// let cache = ImageCache::with_weighter(500, 64 * 1024 * 1024, TileWeighter); // ~64MB budget
 /// ```
-pub type TextureCache = Cache<TileDescriptor, Tile, TileWeighter>;
+pub(crate) type TextureCache = Cache<TileDescriptor, Tile, TileWeighter>;

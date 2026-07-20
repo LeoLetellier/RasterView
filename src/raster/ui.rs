@@ -6,7 +6,7 @@ use egui::{RichText, Ui};
 
 // TODO struct containing all the displayed metadata to avoid FFI at each frame
 impl RasterHandler {
-    pub fn ui_dataset(&self, ui: &mut Ui) {
+    pub(crate) fn ui_dataset(&self, ui: &mut Ui) {
         let metadata = &self.raster_metadata;
         let driver = &metadata.driver;
         let size = metadata.size;
@@ -54,7 +54,7 @@ impl RasterHandler {
         }
     }
 
-    pub fn ui_bands(&self, ui: &mut Ui) {
+    pub(crate) fn ui_bands(&self, ui: &mut Ui) {
         self.raster_metadata.bands.iter().for_each(|b| {
             self.ui_band(&b, ui);
         })
@@ -96,13 +96,13 @@ impl RasterHandler {
     }
 }
 
-pub fn prop_ui(ui: &mut Ui, value: &str) {
+pub(crate) fn prop_ui(ui: &mut Ui, value: &str) {
     if ui.button(RichText::new(value).monospace()).clicked() {
         ui.ctx().copy_text(value.to_string());
     }
 }
 
-pub fn prop_section(ui: &mut Ui, section_name: Option<&str>, props: &[[String; 2]]) {
+pub(crate) fn prop_section(ui: &mut Ui, section_name: Option<&str>, props: &[[String; 2]]) {
     if let Some(n) = section_name {
         ui.label(n);
     }

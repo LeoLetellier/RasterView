@@ -1,9 +1,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod panels;
 mod raster;
-// mod texture_thread;
 mod viewers;
+
+pub(crate) use app::RasterView;
 
 fn main() -> eframe::Result {
     env_logger::init();

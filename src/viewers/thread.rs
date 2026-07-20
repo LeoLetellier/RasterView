@@ -12,7 +12,7 @@ use std::thread;
 /// * `texture_worker.request_load(worker)` to ask to generate new texture
 /// * `texture_worker.poll_request()` to check if a newer texture is available
 #[derive(Debug)]
-pub struct TextureWorker {
+pub(crate) struct TextureWorker {
     job_texture_thread: Sender<(TileDescriptor, ViewMode)>,
     result_texture_thread: Receiver<Tile>,
     /// Check if the current vec tile to loaded is outdated
@@ -21,7 +21,7 @@ pub struct TextureWorker {
 
 impl TextureWorker {
     /// Initialize the texture worker thread
-    pub fn new(ctx: egui::Context, dataset: Dataset) -> Self {
+    pub(crate) fn new(ctx: egui::Context, dataset: Dataset) -> Self {
         let wanted = Arc::new(Mutex::new(HashSet::new()));
         let (job_texture_thread, result_texture_thread) =
             spawn_worker(ctx, dataset, wanted.clone());
@@ -34,26 +34,26 @@ impl TextureWorker {
 
     /// Replace the set of tiles that are still relevant. Call once per frame
     /// before queuing new jobs, so the worker can drop stale ones.
-    pub fn set_wanted(&self, tiles: impl IntoIterator<Item = TileDescriptor>) {
+    pub(crate) fn set_wanted(&self, tiles: impl IntoIterator<Item = TileDescriptor>) {
         let mut w = self.wanted.lock().unwrap();
         w.clear();
         w.extend(tiles);
     }
 
     /// Send a request for a texture refresh
-    pub fn request_load(&mut self, worker: (TileDescriptor, ViewMode)) -> Result<()> {
+    pub(crate) fn request_load(&mut self, worker: (TileDescriptor, ViewMode)) -> Result<()> {
         self.job_texture_thread.send(worker)?;
         Ok(())
     }
 
     /// Check if a new texture is available
-    pub fn poll_results(&mut self) -> Vec<Tile> {
+    pub(crate) fn poll_results(&mut self) -> Vec<Tile> {
         self.result_texture_thread.try_iter().collect()
     }
 }
 
 /// Create the separate thread for non-blocking image texture generation
-pub fn spawn_worker(
+pub(crate) fn spawn_worker(
     ctx: egui::Context,
     dataset: Dataset,
     wanted: Arc<Mutex<HashSet<TileDescriptor>>>,
@@ -62,8 +62,7 @@ pub fn spawn_worker(
     let (result_tx, result_rx) = mpsc::channel::<Tile>();
 
     thread::spawn(move || {
-        // Process every queued job in order — don't collapse to "latest only"
-        // anymore, since jobs now represent a real backlog of missing tiles.
+        // Process every queued job in order
         while let Ok((tile_descriptor, view)) = job_rx.recv() {
             if cfg!(debug_assertions) {
                 println!("Loading tile: {}", tile_descriptor.name());

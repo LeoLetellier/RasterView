@@ -6,11 +6,11 @@ use crate::raster::RasterHandler;
 use crate::viewers::coords::GeoBox;
 use crate::viewers::tiler::{TextureCache, Tile, TileWeighter};
 
-pub mod cmap;
-pub mod coords;
-pub mod thread;
-pub mod tiler;
-pub mod ui;
+pub(crate) mod cmap;
+pub(crate) mod coords;
+pub(crate) mod thread;
+pub(crate) mod tiler;
+pub(crate) mod ui;
 
 use cmap::ColorInterpretation;
 
@@ -18,19 +18,19 @@ use cmap::ColorInterpretation;
 ///
 /// It holds both the cache and the user input parameters
 #[derive(Debug)]
-pub struct Viewer {
+pub(crate) struct Viewer {
     /// Actual raster
-    pub raster_handler: RasterHandler,
+    pub(crate) raster_handler: RasterHandler,
     /// View handler
-    pub view_mode: ViewMode,
+    pub(crate) view_mode: ViewMode,
     /// User parameters for the viewer
-    pub parameters: ViewerParams,
+    pub(crate) parameters: ViewerParams,
     /// Some state parameters for the viewer
-    pub state: ViewerState,
+    pub(crate) state: ViewerState,
 }
 
 #[derive(Debug)]
-pub struct ViewerParams {
+pub(crate) struct ViewerParams {
     /// Size in pixels of the tiles
     ///
     /// Default is 256 pixels
@@ -60,14 +60,14 @@ impl Default for ViewerParams {
 }
 
 #[derive(Debug, Default)]
-pub struct ViewerState {
-    pub last_cursor_pos: Option<PlotPoint>,
-    pub last_bounds: Option<PlotBounds>,
-    pub last_screen_size: Option<(f64, f64)>,
+pub(crate) struct ViewerState {
+    pub(crate) last_cursor_pos: Option<PlotPoint>,
+    pub(crate) last_bounds: Option<PlotBounds>,
+    pub(crate) last_screen_size: Option<(f64, f64)>,
 }
 
 impl Viewer {
-    pub fn with_raster(path: &Path, ctx: egui::Context) -> Result<Self> {
+    pub(crate) fn with_raster(path: &Path, ctx: egui::Context) -> Result<Self> {
         let parameters = ViewerParams::default();
         let raster_handler = RasterHandler::new(path, ctx, parameters.cache_size)?;
 
@@ -79,7 +79,7 @@ impl Viewer {
         })
     }
 
-    pub fn refresh_cache(&mut self) {
+    pub(crate) fn refresh_cache(&mut self) {
         self.raster_handler
             .refresh_cache(self.parameters.cache_size);
     }
@@ -87,7 +87,7 @@ impl Viewer {
 
 /// Sub-mode for complex (CPX) rendering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum PanchroCpxView {
+pub(crate) enum PanchroCpxView {
     /// Use amplitude only.
     AmplitudeOnly,
     /// Use wrapped phase only (your “wrapped panchro”).
@@ -97,19 +97,19 @@ pub enum PanchroCpxView {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ColorCpxView {
+pub(crate) enum ColorCpxView {
     Amplitude,
     WrappedPhase,
 }
 
 #[derive(Debug, Eq, PartialEq, Hash, Clone)]
-pub struct ViewMode {
-    pub active_viewer: ActiveViewer,
-    pub panchro_band: usize,
-    pub rgb_bands: (usize, usize, usize),
-    pub panchro_cpx: PanchroCpxView,
-    pub color_cpx: ColorCpxView,
-    pub color_interpretation: ColorInterpretation,
+pub(crate) struct ViewMode {
+    pub(crate) active_viewer: ActiveViewer,
+    pub(crate) panchro_band: usize,
+    pub(crate) rgb_bands: (usize, usize, usize),
+    pub(crate) panchro_cpx: PanchroCpxView,
+    pub(crate) color_cpx: ColorCpxView,
+    pub(crate) color_interpretation: ColorInterpretation,
 }
 
 impl Default for ViewMode {
@@ -126,7 +126,7 @@ impl Default for ViewMode {
 }
 
 #[derive(Debug, Eq, PartialEq, Hash, Clone)]
-pub enum ActiveViewer {
+pub(crate) enum ActiveViewer {
     Panchro,
     Color,
 }

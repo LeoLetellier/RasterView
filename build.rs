@@ -30,7 +30,7 @@ fn main() {
     files.sort(); // deterministic build output / stable offsets
 
     let mut blob: Vec<u8> = Vec::new();
-    let mut registry = String::from("pub static COLORMAPS: &[ColormapEntry] = &[\n");
+    let mut registry = String::from("pub(crate) static COLORMAPS: &[ColormapEntry] = &[\n");
 
     for path in files {
         println!("cargo:rerun-if-changed={}", path.display());

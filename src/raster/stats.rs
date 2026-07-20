@@ -1,5 +1,4 @@
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::thread;
 
 use anyhow::Result;
@@ -7,10 +6,10 @@ use gdal::Dataset;
 use gdal::errors::GdalError;
 use gdal::raster::RasterBand;
 
-use crate::raster::RasterHandler;
+use super::RasterHandler;
 
 impl RasterHandler {
-    pub fn band_minmax(&mut self, band: usize) -> Option<(f64, f64)> {
+    pub(crate) fn band_minmax(&mut self, band: usize) -> Option<(f64, f64)> {
         self.ensure_stats_loaded(band);
         let cache = self.bands_stats.lock().unwrap();
         match cache.get(band - 1) {
@@ -19,7 +18,7 @@ impl RasterHandler {
         }
     }
 
-    pub fn band_histogram(&mut self, band: usize) -> Option<(f64, f64, Vec<u64>)> {
+    pub(crate) fn band_histogram(&mut self, band: usize) -> Option<(f64, f64, Vec<u64>)> {
         self.ensure_stats_loaded(band);
         let cache = self.bands_stats.lock().unwrap();
         match cache.get(band) {
@@ -30,7 +29,7 @@ impl RasterHandler {
         }
     }
 
-    pub fn band_percentile(&mut self, band: usize, percentile: f64) -> Option<f64> {
+    pub(crate) fn band_percentile(&mut self, band: usize, percentile: f64) -> Option<f64> {
         self.ensure_stats_loaded(band);
         let cache = self.bands_stats.lock().unwrap();
         match cache.get(band) {
@@ -43,7 +42,7 @@ impl RasterHandler {
 
     /// If the band isn't loaded and isn't already loading, kick off a
     /// background thread to compute stats + histogram for it.
-    pub fn ensure_stats_loaded(&self, band: usize) {
+    pub(crate) fn ensure_stats_loaded(&self, band: usize) {
         {
             let cache = self.bands_stats.lock().unwrap();
             match cache.get(band - 1) {
@@ -96,7 +95,7 @@ impl RasterHandler {
 }
 
 #[derive(Debug)]
-pub struct RasterBandStats {
+pub(crate) struct RasterBandStats {
     min: f64,
     max: f64,
     mean: f64,
@@ -105,7 +104,7 @@ pub struct RasterBandStats {
 }
 
 #[derive(Debug)]
-pub enum BandStatStatus {
+pub(crate) enum BandStatStatus {
     NotLoaded,
     Loading,
     Loaded(RasterBandStats),
@@ -113,15 +112,15 @@ pub enum BandStatStatus {
 }
 
 impl RasterBandStats {
-    pub fn minmax(&self) -> (f64, f64) {
+    pub(crate) fn minmax(&self) -> (f64, f64) {
         (self.min, self.max)
     }
 
-    pub fn percentile(&self, percentile: f64) -> Option<f64> {
+    pub(crate) fn percentile(&self, percentile: f64) -> Option<f64> {
         value_at_percentile(&self.counts, self.min, self.max, percentile)
     }
 
-    pub fn from_rasterband(raster_band: &RasterBand, buckets: usize) -> Result<Self> {
+    pub(crate) fn from_rasterband(raster_band: &RasterBand, buckets: usize) -> Result<Self> {
         let stats = raster_band.get_statistics(true, true)?;
 
         let stats = stats.ok_or_else(|| {

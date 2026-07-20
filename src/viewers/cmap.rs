@@ -8,20 +8,20 @@ use crate::viewers::cmap::NormMode::PerBand;
 
 static COLORMAP_BLOB: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/colormaps.bin"));
 
-pub struct ColormapEntry {
-    pub name: &'static str,
-    pub cmap_type: ColorMapType,
-    pub offset: usize,
-    pub len: usize,
-    pub below: [u8; 4],
-    pub above: [u8; 4],
-    pub nan: [u8; 4],
+pub(crate) struct ColormapEntry {
+    pub(crate) name: &'static str,
+    pub(crate) cmap_type: ColorMapType,
+    pub(crate) offset: usize,
+    pub(crate) len: usize,
+    pub(crate) below: [u8; 4],
+    pub(crate) above: [u8; 4],
+    pub(crate) nan: [u8; 4],
 }
 
 include!(concat!(env!("OUT_DIR"), "/colormaps_registry.rs"));
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct ColorInterpretation {
+pub(crate) struct ColorInterpretation {
     ranging_mode: ColorRanging,
     ranging_values: (f32, f32),
     colormap: ColorMap,
@@ -29,7 +29,7 @@ pub struct ColorInterpretation {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum NormMode {
+pub(crate) enum NormMode {
     PerBand,
     AllBands,
 }
@@ -59,7 +59,7 @@ impl Hash for ColorInterpretation {
 }
 
 impl ColorInterpretation {
-    pub fn new(colormap: ColorMap) -> Self {
+    pub(crate) fn new(colormap: ColorMap) -> Self {
         let mut ci = ColorInterpretation::default();
         ci.colormap = colormap;
         ci
@@ -67,7 +67,7 @@ impl ColorInterpretation {
 }
 
 impl ColorInterpretation {
-    pub fn panchro_buffer_to_colorimage(&self, buffer: Buffer<f32>) -> Arc<ColorImage> {
+    pub(crate) fn panchro_buffer_to_colorimage(&self, buffer: Buffer<f32>) -> Arc<ColorImage> {
         let (buffer_width, buffer_height) = buffer.shape();
         let data = buffer.data();
 
@@ -83,7 +83,7 @@ impl ColorInterpretation {
         ))
     }
 
-    pub fn rgb_buffers_to_colorimage(
+    pub(crate) fn rgb_buffers_to_colorimage(
         &self,
         buffers: (Buffer<f32>, Buffer<f32>, Buffer<f32>),
     ) -> Arc<ColorImage> {
@@ -92,7 +92,7 @@ impl ColorInterpretation {
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
-pub enum ColorRanging {
+pub(crate) enum ColorRanging {
     MinMax,
     Percentile,
     Manual,
@@ -115,12 +115,12 @@ struct ColorMapLut {
 
 impl ColorMapLut {
     #[inline]
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.data.len() / 4
     }
 
     #[inline]
-    pub fn get(&self, idx: usize) -> [u8; 4] {
+    pub(crate) fn get(&self, idx: usize) -> [u8; 4] {
         let o = idx * 4;
         [
             self.data[o],
@@ -140,7 +140,7 @@ enum ColorMapType {
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
-pub struct ColorMap {
+pub(crate) struct ColorMap {
     lut: ColorMapLut,
     below: [u8; 4],
     above: [u8; 4],
@@ -185,7 +185,7 @@ impl TryFrom<&str> for ColorMap {
 }
 
 impl ColorMap {
-    pub fn from_name(name: &str) -> Option<Self> {
+    pub(crate) fn from_name(name: &str) -> Option<Self> {
         let entry = COLORMAPS.iter().find(|e| e.name == name)?;
         let start = entry.offset * 4;
         let end = start + entry.len * 4;
@@ -201,11 +201,11 @@ impl ColorMap {
     }
 
     /// Handy for populating a UI dropdown.
-    pub fn names() -> impl Iterator<Item = &'static str> {
+    pub(crate) fn names() -> impl Iterator<Item = &'static str> {
         COLORMAPS.iter().map(|e| e.name)
     }
 
-    pub fn apply_into(
+    pub(crate) fn apply_into(
         &self,
         data: &[f32],
         ranging_mode: &ColorRanging,
@@ -236,7 +236,7 @@ impl ColorMap {
             });
     }
 
-    pub fn apply(
+    pub(crate) fn apply(
         &self,
         data: &[f32],
         ranging_mode: &ColorRanging,

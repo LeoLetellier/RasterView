@@ -12,7 +12,7 @@ use std::ops::{Div, Sub};
 /// - `center()`: the midpoint of the x/y extents
 /// - `intersection()`: the overlapping region (returns `None` when empty)
 /// - `union()`: the minimal box that contains both inputs
-pub trait Bbox<T>: From<[T; 4]>
+pub(crate) trait Bbox<T>: From<[T; 4]>
 where
     T: Sub<Output = T> + Div<Output = T> + NumCast + Copy,
 {
@@ -117,7 +117,7 @@ fn partial_max<T: PartialOrd>(a: T, b: T) -> T {
 ///
 /// The extents are stored in the order `[xmin, xmax, ymin, ymax]`.
 #[derive(Debug, Clone, Copy, PartialEq, Hash, Eq)]
-pub struct PixelBox {
+pub(crate) struct PixelBox {
     xmin: usize,
     xmax: usize,
     ymin: usize,
@@ -208,7 +208,7 @@ impl Bbox<usize> for PixelBox {
 // }
 
 // impl RawTile {
-//     pub fn to_downsample_pixelbox(&self) -> DownPixelBox {
+//     pub(crate) fn to_downsample_pixelbox(&self) -> DownPixelBox {
 //         let factor = 1usize << self.downsample; // 2^downsample
 
 //         let down_width = self.full_pbox.width() / factor;
@@ -222,7 +222,7 @@ impl Bbox<usize> for PixelBox {
 ///
 /// The extents are stored in the order `[xmin, xmax, ymin, ymax]`.
 #[derive(Debug, Clone, Copy)]
-pub struct GeoBox {
+pub(crate) struct GeoBox {
     xmin: f64,
     xmax: f64,
     ymin: f64,
@@ -298,7 +298,7 @@ impl Bbox<f64> for GeoBox {
 ///
 /// [GDAL documentation](https://gdal.org/en/stable/tutorials/geotransforms_tut.html)
 #[derive(Debug)]
-pub struct GeoTransform {
+pub(crate) struct GeoTransform {
     /// x-coordinate of the upper-left corner of the upper-left pixel
     x_off: f64,
     /// w-e pixel resolution / pixel width
@@ -317,26 +317,26 @@ impl GeoTransform {
     /// X and Y offsets of the geotransform
     ///
     /// This is the position of the upper-left corner
-    pub fn offsets(&self) -> PlotPoint {
+    pub(crate) fn offsets(&self) -> PlotPoint {
         PlotPoint::new(self.x_off, self.y_off)
     }
 
     /// X and Y resolution of the pixels
     ///
     /// This is the width and height of the pixel
-    pub fn resolutions(&self) -> PlotPoint {
+    pub(crate) fn resolutions(&self) -> PlotPoint {
         PlotPoint::new(self.x_res, self.y_res)
     }
 
     /// X and Y rotations of the pixels
-    pub fn rotations(&self) -> PlotPoint {
+    pub(crate) fn rotations(&self) -> PlotPoint {
         PlotPoint::new(self.x_rot, self.y_rot)
     }
 
     /// New geotransform with no rotation
     ///
     /// To add a rotation, use `with_rotation()` instead
-    pub fn new(x_off: f64, x_res: f64, y_off: f64, y_res: f64) -> GeoTransform {
+    pub(crate) fn new(x_off: f64, x_res: f64, y_off: f64, y_res: f64) -> GeoTransform {
         GeoTransform {
             x_off,
             x_res,
@@ -348,7 +348,7 @@ impl GeoTransform {
     }
 
     /// New geotransform with rotation
-    pub fn with_rotation(
+    pub(crate) fn with_rotation(
         x_off: f64,
         x_res: f64,
         x_rot: f64,
@@ -371,7 +371,7 @@ impl GeoTransform {
     /// X_geo = x_off + x_pixel * x_res + y_line * x_rot
     /// Y_geo = y_off + x_pixel * y_rot + y_line * y_res
     #[inline]
-    pub fn pixel_to_geo(&self, x_pixel: f64, y_line: f64) -> (f64, f64) {
+    pub(crate) fn pixel_to_geo(&self, x_pixel: f64, y_line: f64) -> (f64, f64) {
         let x_geo = self.x_off + x_pixel * self.x_res + y_line * self.x_rot;
         let y_geo = self.y_off + x_pixel * self.y_rot + y_line * self.y_res;
         (x_geo, y_geo)
@@ -382,7 +382,7 @@ impl GeoTransform {
     /// Returns `None` if the transform is degenerate (determinant ~ 0),
     /// which would otherwise produce NaN/inf.
     #[inline]
-    pub fn geo_to_pixel(&self, x_geo: f64, y_geo: f64) -> Option<(f64, f64)> {
+    pub(crate) fn geo_to_pixel(&self, x_geo: f64, y_geo: f64) -> Option<(f64, f64)> {
         let det = self.x_res * self.y_res - self.x_rot * self.y_rot;
         if det.abs() < f64::EPSILON {
             return None;
@@ -396,7 +396,7 @@ impl GeoTransform {
         Some((x_pixel, y_line))
     }
 
-    pub fn as_geobox(&self, raster_size: (usize, usize)) -> Option<GeoBox> {
+    pub(crate) fn as_geobox(&self, raster_size: (usize, usize)) -> Option<GeoBox> {
         GeoBox::new(
             self.x_off,
             self.x_off + self.x_res * raster_size.0 as f64,
@@ -425,7 +425,7 @@ impl GeoTransform {
     /// Transforms all four corners (not just two) so this stays correct even
     /// when `x_rot`/`y_rot` are non-zero -- with rotation, the top-left and
     /// bottom-right pixel corners don't necessarily map to the geo min/max corners.
-    pub fn pixel_box_to_geo_box(&self, px_box: &PixelBox) -> GeoBox {
+    pub(crate) fn pixel_box_to_geo_box(&self, px_box: &PixelBox) -> GeoBox {
         let corners = [
             (px_box.xmin() as f64, px_box.ymin() as f64),
             (px_box.xmax() as f64, px_box.ymin() as f64),
@@ -455,7 +455,7 @@ impl GeoTransform {
     /// Fractional pixel coordinates are floored/ceiled outward so the returned
     /// `PixelBox` fully covers the requested geo area, and clamped at 0 since
     /// `PixelBox` uses `usize`.
-    pub fn geo_box_to_pixel_box(&self, geo_box: &GeoBox) -> Option<PixelBox> {
+    pub(crate) fn geo_box_to_pixel_box(&self, geo_box: &GeoBox) -> Option<PixelBox> {
         let corners = [
             (geo_box.xmin(), geo_box.ymin()),
             (geo_box.xmax(), geo_box.ymin()),
