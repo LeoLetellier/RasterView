@@ -22,10 +22,10 @@ include!(concat!(env!("OUT_DIR"), "/colormaps_registry.rs"));
 
 #[derive(Debug, PartialEq, Clone)]
 pub(crate) struct ColorInterpretation {
-    ranging_mode: ColorRanging,
-    ranging_values: (f32, f32),
-    colormap: ColorMap,
-    norm_mode: NormMode,
+    pub(crate) ranging_mode: ColorRanging,
+    pub(crate) ranging_values: (f32, f32),
+    pub(crate) colormap: ColorMap,
+    pub(crate) norm_mode: NormMode,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -37,7 +37,7 @@ pub(crate) enum NormMode {
 impl Default for ColorInterpretation {
     fn default() -> Self {
         ColorInterpretation {
-            ranging_mode: ColorRanging::MinMax,
+            ranging_mode: ColorRanging::Manual,
             ranging_values: (0.0, 1.0),
             colormap: ColorMap::default(),
             norm_mode: PerBand,
@@ -64,9 +64,12 @@ impl ColorInterpretation {
         ci.colormap = colormap;
         ci
     }
-}
 
-impl ColorInterpretation {
+    pub(crate) fn with_ranging_values(&mut self, ranging_values: (f32, f32)) -> &Self {
+        self.ranging_values = ranging_values;
+        self
+    }
+
     pub(crate) fn panchro_buffer_to_colorimage(&self, buffer: Buffer<f32>) -> Arc<ColorImage> {
         let (buffer_width, buffer_height) = buffer.shape();
         let data = buffer.data();
@@ -132,7 +135,7 @@ impl ColorMapLut {
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
-enum ColorMapType {
+pub(crate) enum ColorMapType {
     Sequential,
     Divergent,
     Cyclic,
@@ -254,7 +257,7 @@ fn compute_range(
     ranging_values: (f32, f32),
 ) -> (f32, f32) {
     match ranging_mode {
-        ColorRanging::Manual => todo!(),
+        ColorRanging::Manual => ranging_values,
         ColorRanging::MinMax => {
             let (mut lo, mut hi) = (f32::INFINITY, f32::NEG_INFINITY);
             for &v in data {

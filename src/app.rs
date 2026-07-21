@@ -45,12 +45,24 @@ impl RasterView {
     pub(crate) fn update_path(&mut self, new_path: &Path, ctx: egui::Context) -> Result<()> {
         if let Some(path) = &self.raster_path {
             // Check if we really got new raster
-            if path != new_path {
-                self.viewer = Some(Viewer::with_raster(new_path, ctx)?);
-            } else {
+            if (path == new_path) {
                 // Nothing to do, early return
                 return Ok(());
+            } else {
+                self.viewer = Some(Viewer::with_raster(new_path, ctx)?);
             }
+        } else {
+            // First raster to initialize
+            self.viewer = Some(Viewer::with_raster(new_path, ctx)?);
+        }
+
+        self.raster_path = Some(new_path.into());
+        Ok(())
+    }
+
+    pub(crate) fn update_path_force(&mut self, new_path: &Path, ctx: egui::Context) -> Result<()> {
+        if let Some(path) = &self.raster_path {
+            self.viewer = Some(Viewer::with_raster(new_path, ctx)?);
         } else {
             // First raster to initialize
             self.viewer = Some(Viewer::with_raster(new_path, ctx)?);

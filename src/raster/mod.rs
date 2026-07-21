@@ -9,7 +9,7 @@ use crate::{
     viewers::{
         coords::{self, GeoBox, GeoTransform},
         thread::TextureWorker,
-        tiler::{TextureCache, TileDescriptor, TileWeighter},
+        tiler::{TextureCache, Tile, TileDescriptor, TileWeighter},
     },
 };
 
@@ -24,6 +24,7 @@ pub(crate) struct RasterHandler {
     raster_metadata: RasterMetadata,
     texture_worker: TextureWorker,
     texture_cache: TextureCache,
+    on_screen_texture_retainer: HashSet<Tile>,
     pending_tiles: HashSet<TileDescriptor>,
     pub(crate) bands_stats: Arc<Mutex<Vec<BandStatStatus>>>,
 }
@@ -65,6 +66,7 @@ impl RasterHandler {
             raster_metadata,
             texture_worker,
             texture_cache,
+            on_screen_texture_retainer: Default::default(),
             pending_tiles: Default::default(),
             bands_stats,
         })
@@ -83,6 +85,7 @@ impl RasterHandler {
             cache_size,
             TileWeighter,
         );
+        self.on_screen_texture_retainer = Default::default();
     }
 }
 

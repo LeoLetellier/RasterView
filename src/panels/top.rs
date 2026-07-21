@@ -25,11 +25,10 @@ impl RasterView {
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 egui::widgets::global_theme_preference_switch(ui);
-                if ui
+                let button_response = ui
                     .button("Refresh")
-                    .on_hover_text("Refresh cache and metadata")
-                    .clicked()
-                {
+                    .on_hover_text("Refresh cache and metadata");
+                if button_response.clicked() {
                     if let Some(view) = &mut self.viewer {
                         let _ = view.refresh_cache();
                         if cfg!(debug_assertions) {
@@ -42,6 +41,13 @@ impl RasterView {
                         }
                     }
                 }
+                button_response.context_menu(|ui| {
+                    if ui.button("Reload").clicked() {
+                        if let Some(path) = &mut self.raster_path.clone() {
+                            let _ = self.update_path_force(path.as_path(), ui.ctx().clone());
+                        }
+                    }
+                });
             });
         });
     }

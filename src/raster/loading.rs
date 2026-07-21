@@ -147,72 +147,94 @@ impl RasterHandler {
         view_center: PlotPoint,
         view_mode: ViewMode,
     ) -> Result<Vec<Tile>> {
-        // Pull in everything the background thread finished since last frame
+        // 1. Pull in everything the background thread finished since last frame.
         for tile in self.texture_worker.poll_results() {
             self.pending_tiles.remove(&tile.tile_descriptor);
             self.texture_cache
                 .insert(tile.tile_descriptor.clone(), tile);
         }
 
-        // Split requested descriptors into cache hits and misses
-        let mut missing: Vec<TileDescriptor> = Vec::new();
-        let mut hits: Vec<Tile> = Vec::with_capacity(tile_descriptions.len());
+        // 2. Build this frame's on-screen set.
+        //
+        //    Primary source: texture_cache (also bumps LRU/recency).
+        //    Fallback source: *last frame's* retainer — covers the case where
+        //    the cache evicted a tile that is still on screen; it's still
+        //    alive only because the old retainer held it. We heal the cache
+        //    by reinserting it, so it isn't immediately evictable again.
+        //
+        //    Must read the OLD retainer before overwriting it. Result is built
+        //    in tile_descriptions order (not HashSet iteration order) so
+        //    callers get a stable, predictable ordering.
+        let mut missing_in_cache: Vec<TileDescriptor> = Vec::new();
+        let mut new_retainer: HashSet<Tile> = HashSet::with_capacity(tile_descriptions.len());
+        let mut result: Vec<Tile> = Vec::with_capacity(tile_descriptions.len());
+
         for td in tile_descriptions {
-            match self.texture_cache.get(td) {
-                Some(tile) => hits.push(tile),
-                None => missing.push(td.clone()),
+            if let Some(tile) = self.texture_cache.get(td) {
+                new_retainer.replace(tile.clone());
+                result.push(tile);
+            } else if let Some(tile) = self.on_screen_texture_retainer.get(td) {
+                // Cache dropped it for bookkeeping reasons, but it's still on
+                // screen and still alive. Put it back rather than reload it.
+                self.texture_cache.insert(td.clone(), tile.clone());
+                new_retainer.replace(tile.clone());
+                result.push(tile.clone());
+            } else {
+                missing_in_cache.push(td.clone());
             }
         }
 
-        // Guard against tiles not fitting in memory
-        if let Some(first_hit) = hits.first() {
-            let texture_size = first_hit.texture.byte_size();
-            let hits_size = hits.len() * texture_size;
-            let capacity = self.texture_cache.capacity() as usize;
-            if hits_size < capacity {
-                let nb_texture_fitting = (capacity - hits_size)
-                    .div_ceil(texture_size)
-                    .min(missing.len());
-                missing.truncate(nb_texture_fitting);
-            }
-        }
+        // 3. Swap in the new retainer. Anything dropped here that is not still
+        //    present in texture_cache is genuinely freed now — correct, since
+        //    it's off screen and the cache already decided it's not worth
+        //    keeping via its own weight/LRU policy.
+        self.on_screen_texture_retainer = new_retainer;
 
-        // Tell the worker what's still relevant, so it can drop stale queued jobs
-        self.texture_worker.set_wanted(missing.iter().cloned());
+        // Tell the worker what's still relevant, so it can drop stale queued jobs.
+        self.texture_worker
+            .set_wanted(missing_in_cache.iter().cloned());
 
         // Drop pending-tracking for tiles no longer requested this frame —
-        // otherwise they can get stuck "pending" forever once the worker skips them
-        let missing_set: HashSet<&TileDescriptor> = missing.iter().collect();
+        // otherwise they can get stuck "pending" forever once the worker skips them.
+        let missing_set: HashSet<&TileDescriptor> = missing_in_cache.iter().collect();
         self.pending_tiles.retain(|td| missing_set.contains(td));
 
-        // Nearest-first, so the worker chews through what's on screen first
-        missing.sort_by(|a, b| {
+        // Nearest-first, so the worker chews through what's on screen first.
+        missing_in_cache.sort_by(|a, b| {
             a.distance_to(view_center)
                 .partial_cmp(&b.distance_to(view_center))
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
-        for td in missing {
+        for td in missing_in_cache {
             if self.pending_tiles.insert(td.clone()) {
                 self.texture_worker.request_load((td, view_mode.clone()))?;
             }
         }
 
         if cfg!(debug_assertions) {
-            let cache_len = self.texture_cache.len();
-            let cache_weight = self.texture_cache.weight().div_ceil(1024 * 1024);
-            println!("Number of elements in cache: {} textures", cache_len);
-            println!("Weight of elements in cache: {} MB", cache_weight);
+            println!(
+                "Number of elements in cache: {} textures",
+                self.texture_cache.len()
+            );
+            println!(
+                "Weight of elements in cache: {} MB",
+                self.texture_cache.weight().div_ceil(1024 * 1024)
+            );
             println!(
                 "Total memory use in cache: {} MB",
                 self.texture_cache
                     .memory_used()
                     .total()
                     .div_ceil(1024 * 1024)
-            )
+            );
+            println!(
+                "On-screen retainer: {} textures",
+                self.on_screen_texture_retainer.len()
+            );
         }
 
-        Ok(hits)
+        Ok(result)
     }
 }
 

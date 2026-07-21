@@ -3,16 +3,13 @@ use egui_plot::{PlotBounds, PlotPoint};
 use std::path::Path;
 
 use crate::raster::RasterHandler;
-use crate::viewers::coords::GeoBox;
-use crate::viewers::tiler::{TextureCache, Tile, TileWeighter};
+use cmap::ColorInterpretation;
 
 pub(crate) mod cmap;
 pub(crate) mod coords;
 pub(crate) mod thread;
 pub(crate) mod tiler;
 pub(crate) mod ui;
-
-use cmap::ColorInterpretation;
 
 /// Core of the raster viewer / visualization
 ///
@@ -34,19 +31,20 @@ pub(crate) struct ViewerParams {
     /// Size in pixels of the tiles
     ///
     /// Default is 256 pixels
-    tile_size: usize,
+    pub(crate) tile_size: usize,
     /// Padding outside the viewport to find tiles to display at current frame
     ///
     /// A value of `1` means no padding, more than one add padding,
     /// less than one restrain the tile loading inside the viewport
-    viewport_padding: f64,
+    pub(crate) viewport_padding: f64,
     /// Maximum byte size allowed for the cache
     ///
     /// When loading a new texture in a full cache, the older used texture will be dropped
     ///
     /// Be carefull to be able to fit all tiles neeeded on screen to avoid loop where
     /// while loading needed tile, drop also needed tile
-    cache_size: u64,
+    pub(crate) cache_size: u64,
+    pub(crate) auto_load_band_stats: bool,
 }
 
 impl Default for ViewerParams {
@@ -55,6 +53,7 @@ impl Default for ViewerParams {
             tile_size: 256,                // 256 pixels wide tiles
             viewport_padding: 1.1,         // 10% padding of loaded
             cache_size: 256 * 1024 * 1024, // 256MB cache size
+            auto_load_band_stats: true,
         }
     }
 }

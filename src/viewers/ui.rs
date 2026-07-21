@@ -11,6 +11,10 @@ impl Viewer {
             println!("Context count: {}", context_count);
         }
 
+        if self.parameters.auto_load_band_stats {
+            self.raster_handler.preload_band_stats();
+        }
+
         let tiles_needed = self.need_tiles();
 
         let last_view_center = self.state.last_bounds.map(|lb| lb.center());

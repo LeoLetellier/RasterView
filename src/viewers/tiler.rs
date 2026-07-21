@@ -222,6 +222,27 @@ impl fmt::Debug for Tile {
     }
 }
 
+impl PartialEq for Tile {
+    fn eq(&self, other: &Self) -> bool {
+        self.tile_descriptor == other.tile_descriptor
+    }
+}
+impl Eq for Tile {}
+
+impl std::hash::Hash for Tile {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.tile_descriptor.hash(state);
+    }
+}
+
+// Lets HashSet<Tile>::get / contains work with a &TileDescriptor directly,
+// no need to build a dummy Tile just to look one up.
+impl std::borrow::Borrow<TileDescriptor> for Tile {
+    fn borrow(&self) -> &TileDescriptor {
+        &self.tile_descriptor
+    }
+}
+
 // impl Drop for Tile {
 //     fn drop(&mut self) {
 //         println!(

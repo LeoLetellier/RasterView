@@ -92,6 +92,26 @@ impl RasterHandler {
             }
         });
     }
+
+    pub(crate) fn preload_band_stats(&mut self) {
+        let len = self.bands_stats.lock().unwrap().len();
+
+        'scan: for idx in 0..len {
+            let should_start = {
+                let cache = self.bands_stats.lock().unwrap();
+                match cache.get(idx) {
+                    Some(BandStatStatus::NotLoaded) => true,
+                    Some(BandStatStatus::Loading) => break 'scan,
+                    _ => false,
+                }
+            };
+            if should_start {
+                self.ensure_stats_loaded(idx + 1);
+                println!("\n\n\t>>Loading stats for band {}", idx * 1);
+                break 'scan;
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
