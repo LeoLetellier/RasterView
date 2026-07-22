@@ -5,16 +5,17 @@
 🗺️ Tiny viewer for large GDAL rasters written in rust 🦀
 
 
-## 📖 About
-
 
 ## ✨ Features
 
 * **GDAL raster support**: open `GTiff`, `ENVI`, `ROIPAC` files and more...
 * **Raster information**: display the metadata of your raster.
 * **Fast display**: compiled rendering operations and tile caching allows seemless raster exploration. For very large rasters, consider creating overviews using GDAL (`gdaladdo` command) before opening the raster in the application. 
-* [**Standard color palettes**](./resources/colormaps/README.md): use perceptually perceptive colormaps for intuitive color rendering. ``#TODO``
+* [**Standard color palettes**](./resources/colormaps/README.md): use perceptually perceptive colormaps for intuitive color rendering. ``#WIP``
 * **Cube exploration**: display per pixel profiles along all bands, usefull to explore time series. ``#TODO``
+
+## 📖 About
+
 
 ## 🔧 Installation
 
@@ -39,3 +40,5 @@ export GDALHOME=$CONDA_PREFIX
 export PKG_CONFIG_PATH="$CONDA_PREFIX/lib/pkgconfig:$PKG_CONFIG_PATH"
 cargo clean
 ```
+
+This is the default behavior for Macos. To avoid using this, delete the `.cargo/config.toml` file.

@@ -142,8 +142,20 @@ pub(crate) enum ColorMapType {
     Other,
 }
 
+impl ColorMapType {
+    pub(crate) fn label(&self) -> &'static str {
+        match self {
+            ColorMapType::Sequential => "Sequential",
+            ColorMapType::Divergent => "Divergent",
+            ColorMapType::Cyclic => "Cyclic",
+            ColorMapType::Other => "Other",
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub(crate) struct ColorMap {
+    name: String,
     lut: ColorMapLut,
     below: [u8; 4],
     above: [u8; 4],
@@ -171,6 +183,7 @@ impl Default for ColorMap {
         static GREY_LUT: [u8; N * 4] = build_grey_lut();
 
         ColorMap {
+            name: "default".to_string(),
             lut: ColorMapLut { data: &GREY_LUT },
             below: [0, 0, 0, 255],       // clamp to black
             above: [255, 255, 255, 255], // clamp to white
@@ -188,11 +201,20 @@ impl TryFrom<&str> for ColorMap {
 }
 
 impl ColorMap {
+    pub(crate) fn name(&self) -> &str {
+        self.name.as_str()
+    }
+
+    pub(crate) fn cmap_type(&self) -> &ColorMapType {
+        &self.cmap_type
+    }
+
     pub(crate) fn from_name(name: &str) -> Option<Self> {
         let entry = COLORMAPS.iter().find(|e| e.name == name)?;
         let start = entry.offset * 4;
         let end = start + entry.len * 4;
         Some(ColorMap {
+            name: name.to_string(),
             lut: ColorMapLut {
                 data: &COLORMAP_BLOB[start..end],
             },
@@ -206,6 +228,24 @@ impl ColorMap {
     /// Handy for populating a UI dropdown.
     pub(crate) fn names() -> impl Iterator<Item = &'static str> {
         COLORMAPS.iter().map(|e| e.name)
+    }
+
+    /// Handy for populating a grouped UI dropdown without building full ColorMaps.
+    pub(crate) fn names_with_type() -> impl Iterator<Item = (&'static str, &'static ColorMapType)> {
+        COLORMAPS.iter().map(|e| (e.name, &e.cmap_type))
+    }
+
+    /// Evenly-spaced RGBA samples across the LUT, for lightweight UI previews.
+    pub(crate) fn preview_samples(&self, n: usize) -> Vec<egui::Color32> {
+        let len = self.lut.len();
+        (0..n)
+            .map(|i| {
+                let t = i as f32 / (n.saturating_sub(1)).max(1) as f32;
+                let idx = (t * (len - 1) as f32).round() as usize;
+                let [r, g, b, a] = self.lut.get(idx);
+                egui::Color32::from_rgba_unmultiplied(r, g, b, a)
+            })
+            .collect()
     }
 
     pub(crate) fn apply_into(
