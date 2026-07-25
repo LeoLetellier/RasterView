@@ -87,6 +87,10 @@ impl RasterHandler {
         );
         self.on_screen_texture_retainer = Default::default();
     }
+
+    pub(crate) fn band_is_complex(&self, band: usize) -> bool {
+        false // TODO
+    }
 }
 
 #[derive(Debug)]

@@ -52,6 +52,7 @@ impl RasterView {
                                 ui.label(format!(" | geo: ({:.3},{:.3})", geo_pos.0, geo_pos.1));
                             }
                             ui.label(format!("px: ({:.0},{:.0})", x_pos, y_pos));
+                            // grid-four, globe-simple
                         }
                     }
                 });

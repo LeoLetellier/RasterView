@@ -1,3 +1,4 @@
+use crate::viewers::tasking::ViewStyle;
 use crate::viewers::tiler::{Tile, TileDescriptor};
 use crate::viewers::{ActiveViewer, ViewMode};
 use anyhow::Result;
@@ -13,7 +14,7 @@ use std::thread;
 /// * `texture_worker.poll_request()` to check if a newer texture is available
 #[derive(Debug)]
 pub(crate) struct TextureWorker {
-    job_texture_thread: Sender<(TileDescriptor, ViewMode)>,
+    job_texture_thread: Sender<TileDescriptor>,
     result_texture_thread: Receiver<Tile>,
     /// Check if the current vec tile to loaded is outdated
     wanted: Arc<Mutex<HashSet<TileDescriptor>>>,
@@ -41,7 +42,7 @@ impl TextureWorker {
     }
 
     /// Send a request for a texture refresh
-    pub(crate) fn request_load(&mut self, worker: (TileDescriptor, ViewMode)) -> Result<()> {
+    pub(crate) fn request_load(&mut self, worker: TileDescriptor) -> Result<()> {
         self.job_texture_thread.send(worker)?;
         Ok(())
     }
@@ -57,13 +58,13 @@ pub(crate) fn spawn_worker(
     ctx: egui::Context,
     dataset: Dataset,
     wanted: Arc<Mutex<HashSet<TileDescriptor>>>,
-) -> (Sender<(TileDescriptor, ViewMode)>, Receiver<Tile>) {
-    let (job_tx, job_rx) = mpsc::channel::<(TileDescriptor, ViewMode)>();
+) -> (Sender<TileDescriptor>, Receiver<Tile>) {
+    let (job_tx, job_rx) = mpsc::channel::<TileDescriptor>();
     let (result_tx, result_rx) = mpsc::channel::<Tile>();
 
     thread::spawn(move || {
         // Process every queued job in order
-        while let Ok((tile_descriptor, view)) = job_rx.recv() {
+        while let Ok(tile_descriptor) = job_rx.recv() {
             if cfg!(debug_assertions) {
                 println!("Loading tile: {}", tile_descriptor.name());
             }
@@ -72,25 +73,9 @@ pub(crate) fn spawn_worker(
                 continue;
             }
 
-            let image_color = match view.active_viewer {
-                ActiveViewer::Panchro => {
-                    // Read tile from file
-                    let Ok(buffer) = tile_descriptor.read_buffer(&dataset, view.panchro_band)
-                    else {
-                        continue;
-                    };
-                    // Convert raw tile to RGBA
-                    view.color_interpretation
-                        .panchro_buffer_to_colorimage(buffer)
-                }
-                ActiveViewer::Color => {
-                    let Ok(buffers) = tile_descriptor.read_3buffers(&dataset, view.rgb_bands)
-                    else {
-                        continue;
-                    };
-                    // Convert raw tile to RGBA
-                    view.color_interpretation.rgb_buffers_to_colorimage(buffers)
-                }
+            // Fetch the ColorImage
+            let Some(image_color) = tile_descriptor.tile_to_colorimage(&dataset) else {
+                continue;
             };
 
             // Check if list is outdated

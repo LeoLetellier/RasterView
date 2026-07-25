@@ -1,4 +1,5 @@
 use crate::viewers::coords::{Bbox, GeoBox, PixelBox};
+use crate::viewers::tasking::ViewStyle;
 use crate::viewers::{ActiveViewer, Viewer};
 
 use anyhow::{Result, anyhow};
@@ -20,6 +21,11 @@ impl Viewer {
     pub(crate) fn need_tiles(&self) -> Option<Vec<TileDescriptor>> {
         let raster_size = self.raster_handler.raster_size();
         let lb = self.state.last_bounds?;
+        let view_style = if let Some(vs) = self.task_view() {
+            vs
+        } else {
+            return None;
+        };
 
         let (full_width, full_height) = raster_size;
 
@@ -28,14 +34,14 @@ impl Viewer {
         let screen_size = self.state.last_screen_size?; // needs to be captured from plot_ui.response().rect
 
         let downsampling: usize = self.need_zoom(view_extent, screen_size, raster_size)?;
-        // Check against the viewmode for which band to load
-        let bands: Vec<usize> = match self.view_mode.active_viewer {
-            ActiveViewer::Panchro => vec![self.view_mode.panchro_band],
-            ActiveViewer::Color => {
-                let bands = self.view_mode.rgb_bands;
-                vec![bands.0, bands.1, bands.2]
-            }
-        };
+        // // Check against the viewmode for which band to load
+        // let bands: Vec<usize> = match self.view_mode.active_viewer {
+        //     ActiveViewer::Panchro => vec![self.view_mode.panchro_band],
+        //     ActiveViewer::Color => {
+        //         let bands = self.view_mode.rgb_bands;
+        //         vec![bands.0, bands.1, bands.2]
+        //     }
+        // };
 
         // Check against viewport bounds to determine which tiles are needed
         let pixel_bboxes: Vec<PixelBox> = self.tile_in_view(
@@ -47,12 +53,7 @@ impl Viewer {
         // Cartesian product: every needed tile, for every needed band.
         let descriptors = pixel_bboxes
             .into_iter()
-            .flat_map(|pixel_bbox| {
-                bands.iter().map(move |&band| TileDescriptor {
-                    pixel_bbox: pixel_bbox.clone(),
-                    downsampling,
-                })
-            })
+            .map(|pixel_bbox| TileDescriptor::new(pixel_bbox, downsampling, view_style.clone()))
             .collect();
 
         Some(descriptors)
@@ -177,9 +178,18 @@ impl Viewer {
 pub(crate) struct TileDescriptor {
     pub(crate) pixel_bbox: PixelBox,
     pub(crate) downsampling: usize,
+    pub(crate) view_style: ViewStyle,
 }
 
 impl TileDescriptor {
+    pub(crate) fn new(pixel_bbox: PixelBox, downsampling: usize, view_style: ViewStyle) -> Self {
+        Self {
+            pixel_bbox,
+            downsampling,
+            view_style,
+        }
+    }
+
     pub(crate) fn tile_pixel_size(&self) -> (usize, usize) {
         self.pixel_bbox.size_with_downsampling(self.downsampling)
     }
@@ -204,6 +214,10 @@ impl TileDescriptor {
         let dx = center_point.x - point.x;
         let dy = center_point.y - point.y;
         (dx * dx + dy * dy).sqrt()
+    }
+
+    pub(crate) fn size(&self) -> [usize; 2] {
+        [self.pixel_bbox.width(), self.pixel_bbox.height()]
     }
 }
 

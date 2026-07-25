@@ -1,2 +1,6 @@
 [target.aarch64-apple-darwin]
 rustflags = ["-C", "link-args=-Wl,-rpath,/opt/anaconda3/envs/gdal311/lib"]
+
+[build]
+# Optimized for build host
+rustflags = ["-C", "target-cpu=native"]

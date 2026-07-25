@@ -3,7 +3,7 @@ use egui::ColorImage;
 use egui_plot::PlotPoint;
 use gdal::Dataset;
 use gdal::raster::{Buffer, ResampleAlg};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use super::RasterHandler;
 use crate::viewers::ViewMode;
@@ -148,6 +148,8 @@ impl RasterHandler {
         view_mode: ViewMode,
     ) -> Result<Vec<Tile>> {
         // 1. Pull in everything the background thread finished since last frame.
+        //    We don't know yet whether these are on-screen or not, so park them
+        //    in the off-screen cache; step 2 will "promote" the ones we need.
         for tile in self.texture_worker.poll_results() {
             self.pending_tiles.remove(&tile.tile_descriptor);
             self.texture_cache
@@ -156,38 +158,41 @@ impl RasterHandler {
 
         // 2. Build this frame's on-screen set.
         //
-        //    Primary source: texture_cache (also bumps LRU/recency).
-        //    Fallback source: *last frame's* retainer — covers the case where
-        //    the cache evicted a tile that is still on screen; it's still
-        //    alive only because the old retainer held it. We heal the cache
-        //    by reinserting it, so it isn't immediately evictable again.
-        //
-        //    Must read the OLD retainer before overwriting it. Result is built
-        //    in tile_descriptions order (not HashSet iteration order) so
-        //    callers get a stable, predictable ordering.
+        //    Primary source: OLD retainer (already pinned, zero cache traffic).
+        //    Secondary source: texture_cache — a tile that was off-screen and is
+        //    now needed gets *removed* from the cache and promoted into the new
+        //    retainer. This is the only cache -> retainer direction, and it only
+        //    happens on an actual on/off-screen transition, not every frame.
         let mut missing_in_cache: Vec<TileDescriptor> = Vec::new();
         let mut new_retainer: HashSet<Tile> = HashSet::with_capacity(tile_descriptions.len());
         let mut result: Vec<Tile> = Vec::with_capacity(tile_descriptions.len());
 
         for td in tile_descriptions {
-            if let Some(tile) = self.texture_cache.get(td) {
-                new_retainer.replace(tile.clone());
-                result.push(tile);
-            } else if let Some(tile) = self.on_screen_texture_retainer.get(td) {
-                // Cache dropped it for bookkeeping reasons, but it's still on
-                // screen and still alive. Put it back rather than reload it.
-                self.texture_cache.insert(td.clone(), tile.clone());
+            if let Some(tile) = self.on_screen_texture_retainer.get(td) {
+                // Still on screen since last frame. No cache interaction at all.
                 new_retainer.replace(tile.clone());
                 result.push(tile.clone());
+            } else if let Some((_key, tile)) = self.texture_cache.remove(td) {
+                // Was off-screen (or just arrived from the worker), now needed.
+                // Pull it out of the LRU pool and pin it.
+                new_retainer.replace(tile.clone());
+                result.push(tile);
             } else {
                 missing_in_cache.push(td.clone());
             }
         }
 
-        // 3. Swap in the new retainer. Anything dropped here that is not still
-        //    present in texture_cache is genuinely freed now — correct, since
-        //    it's off screen and the cache already decided it's not worth
-        //    keeping via its own weight/LRU policy.
+        // 3. Anything that WAS pinned last frame but isn't needed this frame just
+        //    became off-screen. Hand it to the cache exactly once, here — the
+        //    only retainer -> cache direction. A tile that stays on screen for
+        //    100 frames touches the cache zero times; it only touches the cache
+        //    on the single frame it leaves.
+        for tile in self.on_screen_texture_retainer.drain() {
+            if !new_retainer.contains(&tile) {
+                self.texture_cache
+                    .insert(tile.tile_descriptor.clone(), tile);
+            }
+        }
         self.on_screen_texture_retainer = new_retainer;
 
         // Tell the worker what's still relevant, so it can drop stale queued jobs.
@@ -208,7 +213,7 @@ impl RasterHandler {
 
         for td in missing_in_cache {
             if self.pending_tiles.insert(td.clone()) {
-                self.texture_worker.request_load((td, view_mode.clone()))?;
+                self.texture_worker.request_load(td)?;
             }
         }
 

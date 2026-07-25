@@ -9,7 +9,15 @@ use gdal::raster::RasterBand;
 use super::RasterHandler;
 
 impl RasterHandler {
-    pub(crate) fn band_minmax(&mut self, band: usize) -> Option<(f64, f64)> {
+    pub(crate) fn band_minmax(&self, band: usize) -> Option<(f64, f64)> {
+        let cache = self.bands_stats.lock().unwrap();
+        match cache.get(band - 1) {
+            Some(BandStatStatus::Loaded(stats)) => Some((stats.min, stats.max)),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn band_minmax_or_load(&mut self, band: usize) -> Option<(f64, f64)> {
         self.ensure_stats_loaded(band);
         let cache = self.bands_stats.lock().unwrap();
         match cache.get(band - 1) {
@@ -18,7 +26,17 @@ impl RasterHandler {
         }
     }
 
-    pub(crate) fn band_histogram(&mut self, band: usize) -> Option<(f64, f64, Vec<u64>)> {
+    pub(crate) fn band_histogram(&self, band: usize) -> Option<(f64, f64, Vec<u64>)> {
+        let cache = self.bands_stats.lock().unwrap();
+        match cache.get(band) {
+            Some(BandStatStatus::Loaded(stats)) => {
+                Some((stats.min, stats.max, stats.counts.clone()))
+            }
+            _ => None,
+        }
+    }
+
+    pub(crate) fn band_histogram_or_load(&mut self, band: usize) -> Option<(f64, f64, Vec<u64>)> {
         self.ensure_stats_loaded(band);
         let cache = self.bands_stats.lock().unwrap();
         match cache.get(band) {
@@ -29,7 +47,17 @@ impl RasterHandler {
         }
     }
 
-    pub(crate) fn band_percentile(&mut self, band: usize, percentile: f64) -> Option<f64> {
+    pub(crate) fn band_percentile(&self, band: usize, percentile: f64) -> Option<f64> {
+        let cache = self.bands_stats.lock().unwrap();
+        match cache.get(band) {
+            Some(BandStatStatus::Loaded(stats)) => {
+                value_at_percentile(&stats.counts, stats.min, stats.max, percentile)
+            }
+            _ => None,
+        }
+    }
+
+    pub(crate) fn band_percentile_or_load(&mut self, band: usize, percentile: f64) -> Option<f64> {
         self.ensure_stats_loaded(band);
         let cache = self.bands_stats.lock().unwrap();
         match cache.get(band) {

@@ -1,10 +1,8 @@
-use egui::{ColorImage, TextBuffer};
+use egui::ColorImage;
 use gdal::raster::Buffer;
+use ordered_float::OrderedFloat;
 use rayon::prelude::*;
-use std::hash::{Hash, Hasher};
-use std::sync::Arc;
-
-use crate::viewers::cmap::NormMode::PerBand;
+use std::{hash::Hash, sync::Arc};
 
 static COLORMAP_BLOB: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/colormaps.bin"));
 
@@ -20,41 +18,26 @@ pub(crate) struct ColormapEntry {
 
 include!(concat!(env!("OUT_DIR"), "/colormaps_registry.rs"));
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub(crate) struct ColorInterpretation {
-    pub(crate) ranging_mode: ColorRanging,
-    pub(crate) ranging_values: (f32, f32),
+    pub(crate) ranging_values: (OrderedFloat<f32>, OrderedFloat<f32>),
     pub(crate) colormap: ColorMap,
-    pub(crate) norm_mode: NormMode,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub(crate) enum NormMode {
-    PerBand,
-    AllBands,
+    pub(crate) invert_cmap: bool,
+    pub(crate) db_mode: DbMode,
+    pub(crate) percentile_clip: OrderedFloat<f32>,
+    pub(crate) cyclic_wrap: CyclicWrap,
 }
 
 impl Default for ColorInterpretation {
     fn default() -> Self {
         ColorInterpretation {
-            ranging_mode: ColorRanging::Manual,
-            ranging_values: (0.0, 1.0),
+            ranging_values: (OrderedFloat(0.0), OrderedFloat(1.0)),
             colormap: ColorMap::default(),
-            norm_mode: PerBand,
+            invert_cmap: false,
+            db_mode: DbMode::default(),
+            percentile_clip: OrderedFloat(2.0),
+            cyclic_wrap: CyclicWrap::default(),
         }
-    }
-}
-
-// Safe: equality above is defined via bit patterns, so it's a true
-// equivalence relation (reflexive even for NaN), unlike f32::eq.
-impl Eq for ColorInterpretation {}
-
-impl Hash for ColorInterpretation {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.ranging_mode.hash(state);
-        self.ranging_values.0.to_bits().hash(state);
-        self.ranging_values.1.to_bits().hash(state);
-        self.colormap.hash(state);
     }
 }
 
@@ -66,8 +49,18 @@ impl ColorInterpretation {
     }
 
     pub(crate) fn with_ranging_values(&mut self, ranging_values: (f32, f32)) -> &Self {
-        self.ranging_values = ranging_values;
+        self.ranging_values = (
+            OrderedFloat(ranging_values.0),
+            OrderedFloat(ranging_values.1),
+        );
         self
+    }
+
+    pub(crate) fn ranging_values(&self) -> (f32, f32) {
+        (
+            self.ranging_values.0.into_inner(),
+            self.ranging_values.1.into_inner(),
+        )
     }
 
     pub(crate) fn panchro_buffer_to_colorimage(&self, buffer: Buffer<f32>) -> Arc<ColorImage> {
@@ -75,9 +68,9 @@ impl ColorInterpretation {
         let data = buffer.data();
 
         // Apply colormap to data
-        let color_data = self
-            .colormap
-            .apply(data, &self.ranging_mode, self.ranging_values);
+        let color_data =
+            self.colormap
+                .apply(data, self.ranging_values(), self.db_mode, self.cyclic_wrap);
 
         // Convert to egui ColorImage
         Arc::new(ColorImage::from_rgba_unmultiplied(
@@ -86,29 +79,34 @@ impl ColorInterpretation {
         ))
     }
 
-    pub(crate) fn rgb_buffers_to_colorimage(
-        &self,
-        buffers: (Buffer<f32>, Buffer<f32>, Buffer<f32>),
-    ) -> Arc<ColorImage> {
-        todo!()
-    }
+    // pub(crate) fn rgb_buffers_to_colorimage(
+    //     &self,
+    //     buffers: (Buffer<f32>, Buffer<f32>, Buffer<f32>),
+    // ) -> Arc<ColorImage> {
+    //     todo!()
+    // }
 }
 
-#[derive(Debug, PartialEq, Clone, Eq, Hash)]
-pub(crate) enum ColorRanging {
-    MinMax,
-    Percentile,
-    Manual,
-    GdalInterpretation,
-}
+fn normalize_buffer_minmax_db(buffer: Buffer<f32>, minmax: (f32, f32), db_mode: bool) -> Vec<f32> {
+    let (min, max) = if db_mode {
+        (10.0 * minmax.0.log10(), 10.0 * minmax.1.log10())
+    } else {
+        minmax
+    };
+    let den = max - min;
+    assert!(den != 0.0);
 
-#[derive(Debug)]
-struct ColorMapScheme {
-    name: String,
-    below: Option<[u8; 4]>,
-    above: Option<[u8; 4]>,
-    nan: Option<[u8; 4]>,
-    stops: Vec<(f32, [u8; 4])>,
+    buffer
+        .data()
+        .par_iter()
+        .map(|b| {
+            if db_mode {
+                (10.0 * b.log10() - min) / den
+            } else {
+                (b - min) / den
+            }
+        })
+        .collect()
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
@@ -248,26 +246,58 @@ impl ColorMap {
             .collect()
     }
 
-    pub(crate) fn apply_into(
+    pub(crate) fn apply(
         &self,
         data: &[f32],
-        ranging_mode: &ColorRanging,
-        ranging_values: (f32, f32),
-        out: &mut [u8],
-    ) {
-        debug_assert_eq!(out.len(), data.len() * 4);
-        let (lo, hi) = compute_range(data, ranging_mode, ranging_values);
+        vminmax: (f32, f32),
+        db_mode: DbMode,
+        wrap: CyclicWrap,
+    ) -> Vec<u8> {
+        let mut out = vec![0u8; data.len() * 4];
         let n = self.lut.len();
-        let scale = (n - 1) as f32 / (hi - lo).max(f32::EPSILON);
+        let n_f = n as f32;
+
+        // vmin/vmax are always in *linear* units — convert once here
+        let vmin = db_mode.convert(vminmax.0);
+        let vmax = db_mode.convert(vminmax.1);
+        debug_assert!(
+            !vmin.is_nan() && !vmax.is_nan(),
+            "vmin/vmax must be > 0 when using a dB mode"
+        );
+        let range = (vmax - vmin).max(f32::EPSILON);
+
+        let wrap_bounds = wrap.bounds();
+        // wrap: divide by n so the period is [vmin, vmax) and wraps back to index 0 at vmax.
+        // clamp: divide by n-1 so vmax lands exactly on the last LUT entry.
+        let scale = if wrap_bounds.is_some() {
+            n_f
+        } else {
+            (n - 1) as f32
+        } / range;
 
         data.par_iter()
             .zip(out.par_chunks_mut(4))
-            .for_each(|(&v, px)| {
+            .for_each(|(&raw, px)| {
+                let mut v = db_mode.convert(raw);
+
+                // Fold the raw value into its natural period *before* mapping it
+                // through vmin/vmax, so values outside the display window still
+                // wrap correctly (e.g. a phase of 3π/2 folds to -π/2, not clamped away).
+                if let Some((lo, hi)) = wrap_bounds {
+                    let period = hi - lo;
+                    if period > 0.0 {
+                        v = lo + (v - lo).rem_euclid(period);
+                    }
+                }
+
                 let rgba = if v.is_nan() {
                     self.nan
                 } else {
-                    let t = (v - lo) * scale;
-                    if t < 0.0 {
+                    let t = (v - vmin) * scale;
+                    if wrap_bounds.is_some() {
+                        let idx = t.rem_euclid(n_f).round() as usize;
+                        self.lut.get(idx.min(n - 1))
+                    } else if t < 0.0 {
                         self.below
                     } else if t > (n - 1) as f32 {
                         self.above
@@ -277,49 +307,77 @@ impl ColorMap {
                 };
                 px.copy_from_slice(&rgba);
             });
-    }
-
-    pub(crate) fn apply(
-        &self,
-        data: &[f32],
-        ranging_mode: &ColorRanging,
-        ranging_values: (f32, f32),
-    ) -> Vec<u8> {
-        let mut out = vec![0u8; data.len() * 4];
-        self.apply_into(data, ranging_mode, ranging_values, &mut out);
         out
     }
 }
 
-fn compute_range(
-    data: &[f32],
-    ranging_mode: &ColorRanging,
-    ranging_values: (f32, f32),
-) -> (f32, f32) {
-    match ranging_mode {
-        ColorRanging::Manual => ranging_values,
-        ColorRanging::MinMax => {
-            let (mut lo, mut hi) = (f32::INFINITY, f32::NEG_INFINITY);
-            for &v in data {
-                if v.is_finite() {
-                    lo = lo.min(v);
-                    hi = hi.max(v);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum DbMode {
+    /// Use linear values
+    None,
+    /// power/intensity ratio: 10 * log10(v)
+    ///
+    /// e.g intensity of backscatter signal
+    Intensity,
+    /// amplitude/voltage ratio: 20 * log10(v)
+    ///
+    /// e.g amplitude of backscatter signal
+    Amplitude,
+}
+
+impl DbMode {
+    #[inline]
+    fn convert(self, v: f32) -> f32 {
+        match self {
+            DbMode::None => v,
+            DbMode::Intensity => {
+                if v > 0.0 {
+                    10.0 * v.log10()
+                } else {
+                    f32::NAN
                 }
             }
-            (lo, hi)
+            DbMode::Amplitude => {
+                if v > 0.0 {
+                    20.0 * v.log10()
+                } else {
+                    f32::NAN
+                }
+            }
         }
-        ColorRanging::Percentile => {
-            todo!();
-            // let mut finite: Vec<f32> = data.iter().copied().filter(|v| v.is_finite()).collect();
-            // let n = finite.len();
-            // let lo_idx = ((p_lo / 100.0) * (n - 1) as f32).round() as usize;
-            // let hi_idx = ((p_hi / 100.0) * (n - 1) as f32).round() as usize;
-            // finite.select_nth_unstable_by(lo_idx, |a, b| a.partial_cmp(b).unwrap());
-            // let lo = finite[lo_idx];
-            // finite.select_nth_unstable_by(hi_idx, |a, b| a.partial_cmp(b).unwrap());
-            // let hi = finite[hi_idx];
-            // (lo, hi)
+    }
+}
+
+impl Default for DbMode {
+    fn default() -> Self {
+        DbMode::None
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum CyclicWrap {
+    None,
+    Radian,
+    Degree,
+    /// (min, max) — not assumed symmetric, so it covers e.g. 0..360 hue/bearing
+    /// as well as symmetric ranges like -x..x.
+    Custom(OrderedFloat<f32>, OrderedFloat<f32>),
+}
+
+impl CyclicWrap {
+    /// Natural (min, max) bounds of the cyclic domain, or `None` if not cyclic.
+    fn bounds(self) -> Option<(f32, f32)> {
+        match self {
+            CyclicWrap::None => None,
+            CyclicWrap::Radian => Some((-std::f32::consts::PI, std::f32::consts::PI)),
+            CyclicWrap::Degree => Some((-360.0, 360.0)),
+            CyclicWrap::Custom(lo, hi) => Some((lo.into_inner(), hi.into_inner())),
         }
-        ColorRanging::GdalInterpretation => todo!("mirror GDAL's default stretch heuristic"),
+    }
+}
+
+impl Default for CyclicWrap {
+    fn default() -> Self {
+        Self::None
     }
 }

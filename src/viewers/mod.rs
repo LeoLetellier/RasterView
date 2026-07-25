@@ -7,6 +7,7 @@ use cmap::ColorInterpretation;
 
 pub(crate) mod cmap;
 pub(crate) mod coords;
+pub(crate) mod tasking;
 pub(crate) mod thread;
 pub(crate) mod tiler;
 pub(crate) mod ui;
@@ -61,6 +62,8 @@ impl Default for ViewerParams {
 #[derive(Debug, Default)]
 pub(crate) struct ViewerState {
     pub(crate) last_cursor_pos: Option<PlotPoint>,
+    pub(crate) last_pan_vel: Option<f64>,
+    pub(crate) last_zoom_vel: Option<f64>,
     pub(crate) last_bounds: Option<PlotBounds>,
     pub(crate) last_screen_size: Option<(f64, f64)>,
 }
@@ -84,21 +87,13 @@ impl Viewer {
     }
 }
 
-/// Sub-mode for complex (CPX) rendering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum PanchroCpxView {
-    /// Use amplitude only.
-    AmplitudeOnly,
-    /// Use wrapped phase only (your “wrapped panchro”).
-    WrappedPhaseOnly,
-    /// Superpose amplitude and phase into a composite visualization.
-    CompositeAmpPhase,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum ColorCpxView {
+pub(crate) enum CpxMode {
+    Combined,
     Amplitude,
     WrappedPhase,
+    Real,
+    Imaginary,
 }
 
 #[derive(Debug, Eq, PartialEq, Hash, Clone)]
@@ -106,9 +101,12 @@ pub(crate) struct ViewMode {
     pub(crate) active_viewer: ActiveViewer,
     pub(crate) panchro_band: usize,
     pub(crate) rgb_bands: (usize, usize, usize),
-    pub(crate) panchro_cpx: PanchroCpxView,
-    pub(crate) color_cpx: ColorCpxView,
+    pub(crate) cpx_mode: CpxMode,
     pub(crate) color_interpretation: ColorInterpretation,
+    pub(crate) ranging_mode: ColorRanging,
+    pub(crate) norm_mode_panchro: NormModePanchro,
+    pub(crate) norm_mode_rgb: NormModeRGB,
+    pub(crate) approx_stats: bool,
 }
 
 impl Default for ViewMode {
@@ -117,14 +115,43 @@ impl Default for ViewMode {
             active_viewer: ActiveViewer::Panchro,
             panchro_band: 1,
             rgb_bands: (1, 2, 3),
-            panchro_cpx: PanchroCpxView::CompositeAmpPhase,
-            color_cpx: ColorCpxView::WrappedPhase,
+            cpx_mode: CpxMode::WrappedPhase,
             color_interpretation: ColorInterpretation::default(),
+            ranging_mode: ColorRanging::Manual,
+            norm_mode_panchro: NormModePanchro::PerBand,
+            norm_mode_rgb: NormModeRGB::PerBand,
+            approx_stats: true,
         }
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Hash, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
+pub(crate) enum ColorRanging {
+    MinMax,
+    Percentile,
+    Manual,
+}
+
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
+pub(crate) enum NormModePanchro {
+    PerBand,
+    AllBands,
+}
+
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
+pub(crate) enum NormModeRGB {
+    PerBand,
+    RGBBands,
+    AllBands,
+}
+
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
+pub(crate) enum NormModeExtent {
+    Raster,
+    CurrentView,
+}
+
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub(crate) enum ActiveViewer {
     Panchro,
     Color,

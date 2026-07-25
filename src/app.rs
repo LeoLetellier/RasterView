@@ -35,7 +35,7 @@ impl RasterView {
         Self {
             raster_path: Default::default(),
             viewer: Default::default(),
-            left_panel_open: true,
+            left_panel_open: false,
             left_panel: LeftPanel::Metadata,
             right_panel_open: true,
             right_panel: RightPanel::Palette,
@@ -102,7 +102,9 @@ impl eframe::App for RasterView {
             egui::Panel::left("left panel")
                 .max_size(ui.ctx().content_rect().width() * 0.33)
                 .show_collapsible(ui, &mut is_open, |ui| {
-                    self.ui_left_panel(ui);
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        self.ui_left_panel(ui);
+                    });
                 });
 
             // Show right panel if toggled
@@ -110,7 +112,9 @@ impl eframe::App for RasterView {
             egui::Panel::right("right panel")
                 .max_size(ui.ctx().content_rect().width() * 0.33)
                 .show_collapsible(ui, &mut is_open, |ui| {
-                    self.ui_right_panel(ui);
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        self.ui_right_panel(ui);
+                    });
                 });
 
             // Lastly show the view at the center

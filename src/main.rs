@@ -6,9 +6,13 @@ mod raster;
 mod viewers;
 
 pub(crate) use app::RasterView;
+pub(crate) use viewers::Viewer;
 
 fn main() -> eframe::Result {
-    env_logger::init();
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .init();
+
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default(),
         ..Default::default()
