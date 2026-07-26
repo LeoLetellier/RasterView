@@ -19,29 +19,41 @@ impl RasterHandler {
             ui.separator();
 
             // Quick info cards
-            ui.horizontal(|ui| {
-                ui.group(|ui| {
-                    ui.vertical(|ui| {
-                        ui.small("Driver");
-                        ui.label(
-                            RichText::new(driver)
-                                .strong()
-                                .color(egui::Color32::LIGHT_BLUE),
-                        );
-                    });
-                });
+            let stats = [
+                ("Driver", driver.to_string()),
+                ("Bands", band_nb.to_string()),
+                ("Width", size.0.to_string()),
+                ("Height", size.1.to_string()),
+            ];
 
-                ui.group(|ui| {
-                    ui.vertical(|ui| {
-                        ui.small("Bands");
-                        ui.label(
-                            RichText::new(band_nb.to_string())
-                                .strong()
-                                .color(egui::Color32::LIGHT_BLUE),
-                        );
-                    });
+            let card_width = 40.0;
+            let available = ui.available_width();
+            let cols =
+                ((available / (card_width + 2.0 * ui.style().spacing.item_spacing.x)).floor()
+                    as usize)
+                    .max(1);
+
+            egui::Grid::new("stats_grid")
+                .num_columns(cols)
+                .spacing([8.0, 8.0])
+                .show(ui, |ui| {
+                    for (i, (label, value)) in stats.iter().enumerate() {
+                        ui.group(|ui| {
+                            ui.set_width(card_width);
+                            ui.vertical_centered(|ui| {
+                                ui.small(*label);
+                                ui.label(
+                                    RichText::new(value)
+                                        .strong()
+                                        .color(egui::Color32::LIGHT_BLUE),
+                                );
+                            });
+                        });
+                        if (i + 1) % cols == 0 {
+                            ui.end_row();
+                        }
+                    }
                 });
-            });
 
             ui.separator();
 

@@ -45,10 +45,8 @@ impl RasterView {
 
         {
             if let Some(viewer) = &self.viewer {
-                egui::ScrollArea::both().show(ui, |ui| {
-                    viewer.raster_handler.ui_dataset(ui);
-                    viewer.raster_handler.ui_bands(ui);
-                });
+                viewer.raster_handler.ui_dataset(ui);
+                viewer.raster_handler.ui_bands(ui);
             }
         }
     }

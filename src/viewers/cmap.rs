@@ -68,9 +68,13 @@ impl ColorInterpretation {
         let data = buffer.data();
 
         // Apply colormap to data
-        let color_data =
-            self.colormap
-                .apply(data, self.ranging_values(), self.db_mode, self.cyclic_wrap);
+        let color_data = self.colormap.apply(
+            data,
+            self.ranging_values(),
+            self.db_mode,
+            self.cyclic_wrap,
+            self.invert_cmap,
+        );
 
         // Convert to egui ColorImage
         Arc::new(ColorImage::from_rgba_unmultiplied(
@@ -252,12 +256,11 @@ impl ColorMap {
         vminmax: (f32, f32),
         db_mode: DbMode,
         wrap: CyclicWrap,
+        invert: bool,
     ) -> Vec<u8> {
         let mut out = vec![0u8; data.len() * 4];
         let n = self.lut.len();
         let n_f = n as f32;
-
-        // vmin/vmax are always in *linear* units — convert once here
         let vmin = db_mode.convert(vminmax.0);
         let vmax = db_mode.convert(vminmax.1);
         debug_assert!(
@@ -265,44 +268,38 @@ impl ColorMap {
             "vmin/vmax must be > 0 when using a dB mode"
         );
         let range = (vmax - vmin).max(f32::EPSILON);
-
         let wrap_bounds = wrap.bounds();
-        // wrap: divide by n so the period is [vmin, vmax) and wraps back to index 0 at vmax.
-        // clamp: divide by n-1 so vmax lands exactly on the last LUT entry.
         let scale = if wrap_bounds.is_some() {
             n_f
         } else {
             (n - 1) as f32
         } / range;
 
+        let resolve = move |idx: usize| -> usize { if invert { n - 1 - idx } else { idx } };
+
         data.par_iter()
             .zip(out.par_chunks_mut(4))
             .for_each(|(&raw, px)| {
                 let mut v = db_mode.convert(raw);
-
-                // Fold the raw value into its natural period *before* mapping it
-                // through vmin/vmax, so values outside the display window still
-                // wrap correctly (e.g. a phase of 3π/2 folds to -π/2, not clamped away).
                 if let Some((lo, hi)) = wrap_bounds {
                     let period = hi - lo;
                     if period > 0.0 {
                         v = lo + (v - lo).rem_euclid(period);
                     }
                 }
-
                 let rgba = if v.is_nan() {
                     self.nan
                 } else {
                     let t = (v - vmin) * scale;
                     if wrap_bounds.is_some() {
                         let idx = t.rem_euclid(n_f).round() as usize;
-                        self.lut.get(idx.min(n - 1))
+                        self.lut.get(resolve(idx.min(n - 1)))
                     } else if t < 0.0 {
                         self.below
                     } else if t > (n - 1) as f32 {
                         self.above
                     } else {
-                        self.lut.get(t.round() as usize)
+                        self.lut.get(resolve(t.round() as usize))
                     }
                 };
                 px.copy_from_slice(&rgba);

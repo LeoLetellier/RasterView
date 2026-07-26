@@ -46,15 +46,18 @@ pub(crate) struct ViewerParams {
     /// while loading needed tile, drop also needed tile
     pub(crate) cache_size: u64,
     pub(crate) auto_load_band_stats: bool,
+    pub(crate) show_tile_bounds: bool,
 }
 
 impl Default for ViewerParams {
     fn default() -> Self {
+        let show_tile_bounds = cfg!(debug_assertions);
         ViewerParams {
             tile_size: 256,                // 256 pixels wide tiles
             viewport_padding: 1.1,         // 10% padding of loaded
             cache_size: 256 * 1024 * 1024, // 256MB cache size
             auto_load_band_stats: true,
+            show_tile_bounds,
         }
     }
 }
@@ -106,6 +109,7 @@ pub(crate) struct ViewMode {
     pub(crate) ranging_mode: ColorRanging,
     pub(crate) norm_mode_panchro: NormModePanchro,
     pub(crate) norm_mode_rgb: NormModeRGB,
+    pub(crate) norm_mode_extent: NormModeExtent,
     pub(crate) approx_stats: bool,
 }
 
@@ -117,9 +121,10 @@ impl Default for ViewMode {
             rgb_bands: (1, 2, 3),
             cpx_mode: CpxMode::WrappedPhase,
             color_interpretation: ColorInterpretation::default(),
-            ranging_mode: ColorRanging::Manual,
+            ranging_mode: ColorRanging::MinMax,
             norm_mode_panchro: NormModePanchro::PerBand,
             norm_mode_rgb: NormModeRGB::PerBand,
+            norm_mode_extent: NormModeExtent::Raster,
             approx_stats: true,
         }
     }

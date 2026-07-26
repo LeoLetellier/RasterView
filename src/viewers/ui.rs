@@ -78,7 +78,7 @@ impl Viewer {
             last_bounds = Some(plot_ui.plot_bounds());
 
             tiles.map(|ot| ot.iter().for_each(|t| t.plot_ui(plot_ui)));
-            if cfg!(debug_assertions) {
+            if self.parameters.show_tile_bounds {
                 if let Some(tiles) = tiles_needed {
                     tiles.iter().for_each(|t| t.ui_tile_bounds(plot_ui));
                 }
