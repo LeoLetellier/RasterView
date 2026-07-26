@@ -2,8 +2,10 @@ use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 const LUT_LEN: usize = 256;
+const CMAP_FOLDER: &str = "./resources/colormaps/";
 
 struct Segment {
     z0: f32,
@@ -19,7 +21,50 @@ struct ParsedCpt {
     nan: [u8; 4],
 }
 
+fn fetch_cmaps() {
+    let colormap_root = Path::new(CMAP_FOLDER);
+    let required_dirs = ["matplotlib", "cmocean", "scm"];
+    let needs_generation = required_dirs.iter().any(|name| {
+        let dir = colormap_root.join(name);
+        !dir.exists()
+            || dir
+                .read_dir()
+                .map(|mut d| d.next().is_none())
+                .unwrap_or(true)
+    });
+
+    if needs_generation {
+        println!("cargo:warning=Colormap resources missing or empty, generating via uv...");
+
+        fn launch_fetch(project_dir: &Path, cmap_name: &str) {
+            let script = format!("fetch_{}.py", cmap_name);
+
+            let status = Command::new("uv")
+                .arg("run")
+                .arg("--project")
+                .arg(project_dir)
+                .arg(&script)
+                .current_dir(project_dir)
+                .status()
+                .expect("failed to spawn `uv` — is it installed and on PATH?");
+
+            if !status.success() {
+                panic!(
+                    "colormap generation script `{}` failed with status: {:?}",
+                    script,
+                    status.code()
+                );
+            }
+        }
+
+        launch_fetch(colormap_root, "matplotlib");
+        launch_fetch(colormap_root, "cmocean");
+        launch_fetch(colormap_root, "scm");
+    }
+}
+
 fn main() {
+    fetch_cmaps();
     println!("cargo:rerun-if-changed=resources/colormaps");
     println!("cargo:rerun-if-changed=resources/colormaps/gmt_colors.txt");
 
