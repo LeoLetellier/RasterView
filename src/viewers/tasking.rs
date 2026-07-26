@@ -3,14 +3,14 @@ use std::{ops::Deref, sync::Arc};
 use crate::{
     Viewer,
     viewers::{
-        ActiveViewer, ColorRanging, CpxMode, NormModePanchro,
+        ActiveViewer, ColorRanging, CpxMode, NormModePanchro, NormModeRGB,
         cmap::{ColorInterpretation, DbMode},
         tiler::TileDescriptor,
     },
 };
 
 use egui::ColorImage;
-use gdal::Dataset;
+use gdal::{Dataset, raster::Buffer};
 use ordered_float::OrderedFloat;
 
 #[derive(Debug, Eq, PartialEq, Hash, Clone)]
@@ -35,7 +35,10 @@ impl TileDescriptor {
                 todo!()
             }
             ViewStyle::Color(style) => {
-                todo!()
+                let buffers = self
+                    .read_3buffers(dataset, (style.band_r, style.band_g, style.band_b))
+                    .ok()?;
+                Some(style.color_buffers_to_colorimage(buffers))
             }
         }
     }
@@ -94,11 +97,57 @@ impl ColorTask {
             band_r: bands.0,
             band_g: bands.1,
             band_b: bands.2,
-            norm_r: (OrderedFloat(rangings.0.1), OrderedFloat(rangings.0.1)),
-            norm_g: (OrderedFloat(rangings.1.1), OrderedFloat(rangings.1.1)),
-            norm_b: (OrderedFloat(rangings.2.1), OrderedFloat(rangings.2.1)),
+            norm_r: (OrderedFloat(rangings.0.0), OrderedFloat(rangings.0.1)),
+            norm_g: (OrderedFloat(rangings.1.0), OrderedFloat(rangings.1.1)),
+            norm_b: (OrderedFloat(rangings.2.0), OrderedFloat(rangings.2.1)),
             norm_db,
         }
+    }
+
+    pub(crate) fn color_buffers_to_colorimage(
+        &self,
+        buffers: (Buffer<f32>, Buffer<f32>, Buffer<f32>),
+    ) -> Arc<ColorImage> {
+        let (buf_r, buf_g, buf_b) = buffers;
+
+        let (width, height) = buf_r.shape();
+        debug_assert_eq!(buf_g.shape(), (width, height), "green band size mismatch");
+        debug_assert_eq!(buf_b.shape(), (width, height), "blue band size mismatch");
+
+        let chan_r = Self::normalize_channel(buf_r.data(), self.norm_r);
+        let chan_g = Self::normalize_channel(buf_g.data(), self.norm_g);
+        let chan_b = Self::normalize_channel(buf_b.data(), self.norm_b);
+
+        let pixel_count = width * height;
+        let mut rgba = Vec::with_capacity(pixel_count * 4);
+        for i in 0..pixel_count {
+            rgba.push(chan_r[i]);
+            rgba.push(chan_g[i]);
+            rgba.push(chan_b[i]);
+            rgba.push(255);
+        }
+
+        Arc::new(ColorImage::from_rgba_unmultiplied([width, height], &rgba))
+    }
+
+    /// Normalizes a single band's raw f32 data into a 0-255 u8 channel,
+    /// applying dB conversion first if requested. Kept separate from
+    /// `Colormap::apply` since RGB compositing needs plain normalized
+    /// intensity, not a colormap lookup.
+    fn normalize_channel(
+        data: &[f32],
+        (min, max): (OrderedFloat<f32>, OrderedFloat<f32>),
+    ) -> Vec<u8> {
+        let min = min.into_inner();
+        let max = max.into_inner();
+        let range = (max - min).max(f32::EPSILON);
+
+        data.iter()
+            .map(|&v| {
+                let t = ((v - min) / range).clamp(0.0, 1.0);
+                (t * 255.0).round() as u8
+            })
+            .collect()
     }
 }
 
@@ -156,7 +205,94 @@ impl Viewer {
     }
 
     fn compute_range_color(&self) -> Option<((f32, f32), (f32, f32), (f32, f32))> {
-        todo!()
+        let rh = &self.raster_handler;
+        let vm = &self.view_mode;
+        let normal_mode = &vm.norm_mode_rgb;
+        let manual_range = (
+            vm.color_interpretation.ranging_values.0.into_inner(),
+            vm.color_interpretation.ranging_values.1.into_inner(),
+        );
+        let perc = vm
+            .color_interpretation
+            .percentile_clip
+            .deref()
+            .clamp(0.00001, 49.9999) as f64;
+
+        let red = vm.rgb_bands.0;
+        let green = vm.rgb_bands.1;
+        let blue = vm.rgb_bands.2;
+
+        // --- per-band stats (one for each of R, G, B) ---
+        let band_minmax = |band: usize| -> Option<(f32, f32)> {
+            rh.band_minmax(band).map(|mm| (mm.0 as f32, mm.1 as f32))
+        };
+        let band_percentile = |band: usize| -> Option<(f32, f32)> {
+            rh.band_percentile(band, perc)
+                .zip(rh.band_percentile(band, 100.0 - perc))
+                .map(|(lo, hi)| (lo as f32, hi as f32))
+        };
+
+        // --- combined stats across an arbitrary set of bands ---
+        let combined_minmax = |bands: &[usize]| -> Option<(f32, f32)> {
+            bands
+                .iter()
+                .map(|&b| rh.band_minmax(b))
+                .try_fold((f32::INFINITY, f32::NEG_INFINITY), |acc, mm| {
+                    mm.map(|(mn, mx)| (acc.0.min(mn as f32), acc.1.max(mx as f32)))
+                })
+        };
+        let combined_percentile = |bands: &[usize]| -> Option<(f32, f32)> {
+            bands
+                .iter()
+                .map(|&b| {
+                    rh.band_percentile(b, perc)
+                        .zip(rh.band_percentile(b, 100.0 - perc))
+                })
+                .try_fold((f32::INFINITY, f32::NEG_INFINITY), |acc, pp| {
+                    pp.map(|(lo, hi)| (acc.0.min(lo as f32), acc.1.max(hi as f32)))
+                })
+        };
+
+        let all_bands: Vec<usize> = (1..=rh.raster_count()).collect();
+        let rgb_bands = [red, green, blue];
+
+        match vm.ranging_mode {
+            ColorRanging::Manual => Some((manual_range, manual_range, manual_range)),
+
+            ColorRanging::MinMax => match normal_mode {
+                NormModeRGB::PerBand => {
+                    let r = band_minmax(red)?;
+                    let g = band_minmax(green)?;
+                    let b = band_minmax(blue)?;
+                    Some((r, g, b))
+                }
+                NormModeRGB::RGBBands => {
+                    let combined = combined_minmax(&rgb_bands)?;
+                    Some((combined, combined, combined))
+                }
+                NormModeRGB::AllBands => {
+                    let combined = combined_minmax(&all_bands)?;
+                    Some((combined, combined, combined))
+                }
+            },
+
+            ColorRanging::Percentile => match normal_mode {
+                NormModeRGB::PerBand => {
+                    let r = band_percentile(red)?;
+                    let g = band_percentile(green)?;
+                    let b = band_percentile(blue)?;
+                    Some((r, g, b))
+                }
+                NormModeRGB::RGBBands => {
+                    let combined = combined_percentile(&rgb_bands)?;
+                    Some((combined, combined, combined))
+                }
+                NormModeRGB::AllBands => {
+                    let combined = combined_percentile(&all_bands)?;
+                    Some((combined, combined, combined))
+                }
+            },
+        }
     }
 
     pub(crate) fn task_view(&self) -> Option<ViewStyle> {

@@ -68,8 +68,8 @@ impl Viewer {
     ) -> Option<usize> {
         let (view_w, view_h) = view_extent; // visible raster pixels (from PlotBounds width/height)
         let (screen_w, screen_h) = screen_size; // actual widget size in screen pixels
-        println!("View extent: {:?}", view_extent);
-        println!("Screen size: {:?}", screen_size);
+        tracing::trace!("View extent: {:?}", view_extent);
+        tracing::trace!("Screen size: {:?}", screen_size);
 
         if screen_w == 0.0 || screen_h == 0.0 {
             return None;
@@ -87,13 +87,14 @@ impl Viewer {
         //
         // Otherwise will continue to degrade the resolution up to an empty raster
         let tile_size = self.parameters.tile_size.max(1);
-        println!("Tile size: {}", tile_size);
+        tracing::trace!("Tile size: {}", tile_size);
         let max_dim = raster_size.0.max(raster_size.1).max(1);
-        println!("Maximum dimension: {}", max_dim);
+        tracing::trace!("Maximum dimension: {}", max_dim);
         let max_downsampling = (max_dim as f64 / tile_size as f64).log2().ceil().max(0.0) as usize;
-        println!(
+        tracing::trace!(
             "Find downsampling: {} but max at {}",
-            raw_downsampling, max_downsampling
+            raw_downsampling,
+            max_downsampling
         );
 
         Some(raw_downsampling.min(max_downsampling))

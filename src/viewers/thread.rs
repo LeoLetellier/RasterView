@@ -66,7 +66,7 @@ pub(crate) fn spawn_worker(
         // Process every queued job in order
         while let Ok(tile_descriptor) = job_rx.recv() {
             if cfg!(debug_assertions) {
-                println!("Loading tile: {}", tile_descriptor.name());
+                tracing::info!("Loading tile: {}", tile_descriptor.name());
             }
             // Check if list is outdated
             if !wanted.lock().unwrap().contains(&tile_descriptor) {

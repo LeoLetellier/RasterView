@@ -22,7 +22,6 @@ impl RasterView {
             return;
         };
         let old_view = view.view_mode.clone();
-        view.load_minmax();
 
         ui.add_space(6.0);
         ui.heading("View settings");
@@ -116,57 +115,59 @@ impl RasterView {
         ui.add_space(14.0);
 
         // CMAPS
-        section_frame(ui, "Colormap", |ui| {
-            ui_cmap_combo(ui, &mut view.view_mode.color_interpretation.colormap);
-            ui.add_space(8.0);
+        if view.view_mode.active_viewer != ActiveViewer::Color {
+            section_frame(ui, "Colormap", |ui| {
+                ui_cmap_combo(ui, &mut view.view_mode.color_interpretation.colormap);
+                ui.add_space(8.0);
 
-            // Full-width preview, much bigger than the tiny row swatch
-            let full_width = ui.available_width();
-            let (OrderedFloat(left_bound), OrderedFloat(right_bound)) =
-                view.view_mode.color_interpretation.ranging_values;
-            cmap_preview_swatch(
-                ui,
-                &view.view_mode.color_interpretation.colormap,
-                egui::vec2(full_width, 22.0),
-                view.view_mode.color_interpretation.invert_cmap,
-                Some((left_bound, right_bound)),
-            );
-
-            ui.add_space(10.0);
-            ui.horizontal(|ui| {
-                ui.checkbox(
-                    &mut view.view_mode.color_interpretation.invert_cmap,
-                    "Invert",
+                // Full-width preview, much bigger than the tiny row swatch
+                let full_width = ui.available_width();
+                let (OrderedFloat(left_bound), OrderedFloat(right_bound)) =
+                    view.view_mode.color_interpretation.ranging_values;
+                cmap_preview_swatch(
+                    ui,
+                    &view.view_mode.color_interpretation.colormap,
+                    egui::vec2(full_width, 22.0),
+                    view.view_mode.color_interpretation.invert_cmap,
+                    Some((left_bound, right_bound)),
                 );
-                ui.add_space(16.0);
-                egui::ComboBox::from_label("dB scale")
-                    .selected_text(match view.view_mode.color_interpretation.db_mode {
-                        DbMode::None => "None",
-                        DbMode::Intensity => "Intensity (10·log10)",
-                        DbMode::Amplitude => "Amplitude (20·log10)",
-                    })
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(
-                            &mut view.view_mode.color_interpretation.db_mode,
-                            DbMode::None,
-                            "None",
-                        )
-                        .on_hover_text("raw");
-                        ui.selectable_value(
-                            &mut view.view_mode.color_interpretation.db_mode,
-                            DbMode::Intensity,
-                            "Intensity",
-                        )
-                        .on_hover_text("10·log10");
-                        ui.selectable_value(
-                            &mut view.view_mode.color_interpretation.db_mode,
-                            DbMode::Amplitude,
-                            "Amplitude  ",
-                        )
-                        .on_hover_text("20·log10");
-                    });
+
+                ui.add_space(10.0);
+                ui.horizontal(|ui| {
+                    ui.checkbox(
+                        &mut view.view_mode.color_interpretation.invert_cmap,
+                        "Invert",
+                    );
+                    ui.add_space(16.0);
+                    egui::ComboBox::from_label("dB scale")
+                        .selected_text(match view.view_mode.color_interpretation.db_mode {
+                            DbMode::None => "None",
+                            DbMode::Intensity => "Intensity (10·log10)",
+                            DbMode::Amplitude => "Amplitude (20·log10)",
+                        })
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(
+                                &mut view.view_mode.color_interpretation.db_mode,
+                                DbMode::None,
+                                "None",
+                            )
+                            .on_hover_text("raw");
+                            ui.selectable_value(
+                                &mut view.view_mode.color_interpretation.db_mode,
+                                DbMode::Intensity,
+                                "Intensity",
+                            )
+                            .on_hover_text("10·log10");
+                            ui.selectable_value(
+                                &mut view.view_mode.color_interpretation.db_mode,
+                                DbMode::Amplitude,
+                                "Amplitude  ",
+                            )
+                            .on_hover_text("20·log10");
+                        });
+                });
             });
-        });
+        }
 
         ui.add_space(14.0);
 
@@ -222,8 +223,23 @@ impl RasterView {
                     let mut min = min_of.into_inner();
                     let mut max = max_of.into_inner();
 
-                    ui.add(egui::Slider::new(&mut min, -1000.0..=max).text("min"));
-                    ui.add(egui::Slider::new(&mut max, min..=1000.0).text("max"));
+                    ui.horizontal(|ui| {
+                        ui.label("min");
+                        let r_min = ui.add(
+                            egui::DragValue::new(&mut min).speed(1.0), // tune to your data's typical scale
+                        );
+
+                        ui.label("max");
+                        let r_max = ui.add(egui::DragValue::new(&mut max).speed(1.0));
+
+                        // Only ordering is enforced — no numeric bounds at all.
+                        if r_min.changed() && min > max {
+                            max = min;
+                        }
+                        if r_max.changed() && max < min {
+                            min = max;
+                        }
+                    });
 
                     view.view_mode.color_interpretation.ranging_values =
                         (OrderedFloat(min), OrderedFloat(max));

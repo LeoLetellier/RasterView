@@ -1,6 +1,7 @@
 use anyhow::Result;
 use gdal::{Dataset, Metadata, raster::RasterBand};
 use std::collections::HashSet;
+use std::ops::DerefMut;
 use std::sync::{Arc, Mutex};
 use std::{ops::Deref, path::Path};
 
@@ -39,6 +40,20 @@ impl Deref for RasterHandler {
 
 impl RasterHandler {
     const CACHE_EXPECTED_MAXIMUM_ELEMENTS: usize = 500;
+
+    pub(crate) fn raster_path(&self) -> &String {
+        &self.path
+    }
+
+    pub(crate) fn as_owned_dataset(&self) -> Result<Dataset> {
+        let dataset = gdal::Dataset::open(&self.path)?;
+        Ok(dataset)
+    }
+
+    pub(crate) fn refresh_dataset_only(&mut self) -> Result<()> {
+        self.gdal_dataset = self.as_owned_dataset()?;
+        Ok(())
+    }
 
     pub(crate) fn new(path: impl AsRef<Path>, ctx: egui::Context, cache_size: u64) -> Result<Self> {
         let gdal_dataset = Dataset::open(&path)?;
@@ -90,6 +105,55 @@ impl RasterHandler {
 
     pub(crate) fn band_is_complex(&self, band: usize) -> bool {
         false // TODO
+    }
+
+    /// Returns true if the dataset already has an overview fine enough to
+    /// serve reads at roughly `tile_size` resolution, so a new pyramid
+    /// build isn't needed.
+    pub(crate) fn has_all_overviews(&self, tile_size: usize) -> bool {
+        let band_count = self.raster_count();
+        if band_count == 0 {
+            return false;
+        }
+
+        for band_idx in 1..=band_count {
+            let Ok(band) = self.rasterband(band_idx) else {
+                return false;
+            };
+
+            let overview_count = band.overview_count().unwrap_or(0);
+            if overview_count == 0 {
+                return false;
+            }
+
+            let base_size = band.size();
+            // Smallest (most decimated) overview's size tells us the coarsest
+            // level available; if even that is still finer than tile_size,
+            // we don't have enough overview levels.
+            let mut finest_available = base_size.0;
+            let mut coarsest_available = base_size.0;
+
+            for i in 0..overview_count {
+                let Ok(ov) = band.overview(i as usize) else {
+                    return false;
+                };
+                let ov_size = ov.size().0;
+                finest_available = finest_available.min(ov_size);
+                coarsest_available = coarsest_available.min(ov_size).max(0);
+                let _ = finest_available; // silence unused if not needed elsewhere
+                if ov_size < coarsest_available || i == 0 {
+                    coarsest_available = ov_size;
+                }
+            }
+
+            // We're satisfied only if the pyramid goes at least as coarse as
+            // what tile_size needs (i.e. some overview level is <= tile_size).
+            if coarsest_available > tile_size {
+                return false;
+            }
+        }
+
+        true
     }
 }
 

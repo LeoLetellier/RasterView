@@ -1,5 +1,5 @@
+use crate::icon;
 use egui::{Color32, RichText, Ui, widget_text::WidgetText};
-use egui_phosphor as icon;
 
 use crate::RasterView;
 

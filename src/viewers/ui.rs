@@ -8,7 +8,7 @@ impl Viewer {
     pub(crate) fn ui(&mut self, ui: &mut Ui) {
         if cfg!(debug_assertions) {
             let context_count = ui.ctx().tex_manager().read().allocated().count();
-            println!("Context count: {}", context_count);
+            tracing::trace!("Context count: {}", context_count);
         }
 
         if self.parameters.auto_load_band_stats {

@@ -1,5 +1,7 @@
 use anyhow::Result;
+use eframe::App;
 use egui_phosphor as icon;
+use std::default;
 use std::path::{Path, PathBuf};
 
 use crate::panels::{LeftPanel, RightPanel};
@@ -20,6 +22,20 @@ pub(crate) struct RasterView {
     pub(crate) left_panel: LeftPanel,
     pub(crate) right_panel_open: bool,
     pub(crate) right_panel: RightPanel,
+    pub(crate) app_state: AppState,
+}
+
+#[derive(Default)]
+pub(crate) struct AppState {
+    pub(crate) pyramid_promise: Option<poll_promise::Promise<Result<()>>>,
+}
+
+impl std::fmt::Debug for AppState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AppState")
+            .field("pyramid_promise", &self.pyramid_promise.is_some())
+            .finish()
+    }
 }
 
 impl RasterView {
@@ -39,20 +55,24 @@ impl RasterView {
             left_panel: LeftPanel::Metadata,
             right_panel_open: true,
             right_panel: RightPanel::Palette,
+            app_state: AppState::default(),
         }
     }
 
     pub(crate) fn update_path(&mut self, new_path: &Path, ctx: egui::Context) -> Result<()> {
         if let Some(path) = &self.raster_path {
             // Check if we really got new raster
-            if (path == new_path) {
+            if path == new_path {
                 // Nothing to do, early return
+                tracing::info!("Asking update path > file already loaded");
                 return Ok(());
             } else {
+                tracing::info!("Asking update path > change loaded file");
                 self.viewer = Some(Viewer::with_raster(new_path, ctx)?);
             }
         } else {
             // First raster to initialize
+            tracing::info!("Asking update path > first loading file");
             self.viewer = Some(Viewer::with_raster(new_path, ctx)?);
         }
 
@@ -61,7 +81,7 @@ impl RasterView {
     }
 
     pub(crate) fn update_path_force(&mut self, new_path: &Path, ctx: egui::Context) -> Result<()> {
-        if let Some(path) = &self.raster_path {
+        if let Some(_) = &self.raster_path {
             self.viewer = Some(Viewer::with_raster(new_path, ctx)?);
         } else {
             // First raster to initialize
@@ -102,7 +122,7 @@ impl eframe::App for RasterView {
             egui::Panel::left("left panel")
                 .max_size(ui.ctx().content_rect().width() * 0.33)
                 .show_collapsible(ui, &mut is_open, |ui| {
-                    egui::ScrollArea::vertical().show(ui, |ui| {
+                    egui::ScrollArea::both().show(ui, |ui| {
                         self.ui_left_panel(ui);
                     });
                 });
@@ -112,7 +132,7 @@ impl eframe::App for RasterView {
             egui::Panel::right("right panel")
                 .max_size(ui.ctx().content_rect().width() * 0.33)
                 .show_collapsible(ui, &mut is_open, |ui| {
-                    egui::ScrollArea::vertical().show(ui, |ui| {
+                    egui::ScrollArea::both().show(ui, |ui| {
                         self.ui_right_panel(ui);
                     });
                 });

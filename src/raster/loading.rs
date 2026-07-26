@@ -2,7 +2,8 @@ use anyhow::Result;
 use egui::ColorImage;
 use egui_plot::PlotPoint;
 use gdal::Dataset;
-use gdal::raster::{Buffer, ResampleAlg};
+use gdal::errors::GdalError;
+use gdal::raster::{Buffer, RasterBand, ResampleAlg};
 use std::collections::{HashMap, HashSet};
 
 use super::RasterHandler;
@@ -218,22 +219,22 @@ impl RasterHandler {
         }
 
         if cfg!(debug_assertions) {
-            println!(
+            tracing::trace!(
                 "Number of elements in cache: {} textures",
                 self.texture_cache.len()
             );
-            println!(
+            tracing::trace!(
                 "Weight of elements in cache: {} MB",
                 self.texture_cache.weight().div_ceil(1024 * 1024)
             );
-            println!(
+            tracing::trace!(
                 "Total memory use in cache: {} MB",
                 self.texture_cache
                     .memory_used()
                     .total()
                     .div_ceil(1024 * 1024)
             );
-            println!(
+            tracing::trace!(
                 "On-screen retainer: {} textures",
                 self.on_screen_texture_retainer.len()
             );
@@ -243,34 +244,127 @@ impl RasterHandler {
     }
 }
 
+/// Compute overview factors (2, 4, 8, ...) until the smallest raster
+/// dimension at that level would fall below `min_size`.
+fn compute_levels(dataset: &Dataset, min_size: usize) -> Vec<i32> {
+    let (x_size, y_size) = dataset.raster_size();
+    let min_dim = x_size.min(y_size) as i32;
+
+    let mut levels = Vec::new();
+    let mut factor: i32 = 2;
+    while (min_dim / factor) as usize >= min_size {
+        levels.push(factor);
+        factor *= 2;
+    }
+    levels
+}
+
+/// Build a pyramid (overviews) automatically sized from the raster's
+/// dimensions, stopping once the smallest overview level would be
+/// below `min_size` pixels on its shortest side.
+pub fn build_pyramid(
+    dataset: &mut Dataset,
+    resample_alg: &str,
+    min_size: usize,
+) -> Result<(), GdalError> {
+    let levels = compute_levels(dataset, min_size);
+    if levels.is_empty() {
+        return Ok(());
+    }
+    dataset.build_overviews(resample_alg, &levels, &[])
+}
+
+/// Build a pyramid with explicit levels, e.g. &[2, 4, 8, 16].
+pub fn build_pyramid_with_levels(
+    dataset: &mut Dataset,
+    resample_alg: &str,
+    levels: &[i32],
+) -> Result<(), GdalError> {
+    dataset.build_overviews(resample_alg, levels, &[])
+}
+
 impl TileDescriptor {
     pub(crate) fn read_buffer(&self, dataset: &Dataset, band: usize) -> Result<Buffer<f32>> {
         let raster_band = dataset.rasterband(band)?;
         let raster_size = dataset.raster_size();
         let nodata = raster_band.no_data_value();
-
         let pixel_bbox = &self.pixel_bbox;
 
         // Full-resolution window into the raster we want to read
         // Count from ymax for Y direction offset
         let offset = (pixel_bbox.xmin(), raster_size.1 - pixel_bbox.ymax());
         let window_size = (pixel_bbox.width(), pixel_bbox.height());
-
         // Output buffer size after downsampling — GDAL will decimate/resample
         // while reading when this is smaller than window_size.
         let buffer_size = self.tile_pixel_size();
 
-        let mut buffer = raster_band.read_as::<f32>(
-            (offset.0 as isize, offset.1 as isize),
-            window_size,
-            buffer_size,
-            None,
-        )?;
+        // Prefer reading from the closest overview that still meets or exceeds
+        // the requested resolution, instead of always decimating from full-res.
+        let overview = Self::select_overview(&raster_band, offset, window_size, buffer_size)?;
 
+        let mut buffer = match &overview {
+            Some((ov, ov_offset, ov_window)) => {
+                tracing::info!("use OVR");
+                ov.read_as::<f32>(*ov_offset, *ov_window, buffer_size, None)?
+            }
+            None => raster_band.read_as::<f32>(
+                (offset.0 as isize, offset.1 as isize),
+                window_size,
+                buffer_size,
+                None,
+            )?,
+        };
         // Treat ndv and non finite nbs as NaN
         clean_nodata_and_nonfinite(&mut buffer, nodata);
-
         Ok(buffer)
+    }
+
+    /// Finds the overview (if any) whose resolution is closest to, without being
+    /// coarser than, `buffer_size`, and rescales `offset`/`window_size` into that
+    /// overview's pixel space. Returns `None` if there are no overviews, or if
+    /// we're not actually downsampling (`buffer_size >= window_size`).
+    fn select_overview<'a>(
+        band: &'a RasterBand<'a>,
+        offset: (usize, usize),
+        window_size: (usize, usize),
+        buffer_size: (usize, usize),
+    ) -> Result<Option<(RasterBand<'a>, (isize, isize), (usize, usize))>> {
+        let overview_count = band.overview_count().unwrap_or(0);
+        if overview_count == 0 || buffer_size.0 >= window_size.0 {
+            return Ok(None);
+        }
+
+        let base_size = band.size();
+        // Decimation factor needed to go from the full-res window to the target buffer.
+        let desired_scale = window_size.0 as f64 / buffer_size.0 as f64;
+
+        let mut best: Option<(RasterBand<'a>, f64)> = None;
+        for i in 0..overview_count {
+            let ov = band.overview(i as usize)?;
+            let ov_size = ov.size();
+            let scale = base_size.0 as f64 / ov_size.0 as f64;
+
+            // Keep the overview closest to, but not coarser than, what we need.
+            let is_better = match &best {
+                Some((_, best_scale)) => scale > *best_scale && scale <= desired_scale,
+                None => scale <= desired_scale,
+            };
+            if is_better {
+                best = Some((ov, scale));
+            }
+        }
+
+        Ok(best.map(|(ov, scale)| {
+            let ov_offset = (
+                (offset.0 as f64 / scale).round() as isize,
+                (offset.1 as f64 / scale).round() as isize,
+            );
+            let ov_window = (
+                (window_size.0 as f64 / scale).round() as usize,
+                (window_size.1 as f64 / scale).round() as usize,
+            );
+            (ov, ov_offset, ov_window)
+        }))
     }
 
     pub(crate) fn read_3buffers(

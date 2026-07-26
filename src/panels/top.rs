@@ -1,5 +1,7 @@
 use crate::RasterView;
-use egui::Ui;
+use crate::icon;
+use crate::raster::loading::build_pyramid;
+use egui::{RichText, Ui};
 
 impl RasterView {
     pub(crate) fn ui_top_panel(&mut self, ui: &mut Ui) {
@@ -24,25 +26,77 @@ impl RasterView {
                 }
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                // Light Dark mode switch
                 egui::widgets::global_theme_preference_switch(ui);
-                let button_response = ui
-                    .button("Refresh")
-                    .on_hover_text("Refresh cache and metadata");
-                if button_response.clicked() {
-                    if let Some(view) = &mut self.viewer {
-                        let _ = view.refresh_cache();
-                        if cfg!(debug_assertions) {
-                            let minmax = view.raster_handler.band_minmax(1);
-                            let actual_state = view.raster_handler.bands_stats.clone();
-                            println!(
-                                "\n>>>>>>    Got minmax: {:?} with status {:?}    <<<<<<\n",
-                                minmax, actual_state
-                            );
+
+                // GDAL pyramid
+                if let Some(view) = &mut self.viewer {
+                    let has_overviews = view
+                        .raster_handler
+                        .has_all_overviews(view.parameters.tile_size);
+
+                    // Poll any in-flight pyramid build first, so the UI reflects completion this frame.
+                    if let Some(promise) = &self.app_state.pyramid_promise {
+                        if let Some(result) = promise.ready() {
+                            match result {
+                                Ok(()) => {
+                                    let _ = view.raster_handler.refresh_dataset_only();
+                                }
+                                Err(e) => {
+                                    eprintln!("pyramid build failed: {e:?}");
+                                }
+                            }
+                            self.app_state.pyramid_promise = None;
+                        }
+                    }
+
+                    if self.app_state.pyramid_promise.is_some() {
+                        // Build in progress: show spinner instead of the button.
+                        ui.add(egui::Spinner::new())
+                            .on_hover_text("Building GDAL pyramid…");
+                    } else {
+                        let button = ui
+                            .add_enabled(
+                                !has_overviews,
+                                egui::Button::new(RichText::new(icon::regular::TORNADO)),
+                            )
+                            .on_hover_text(if has_overviews {
+                                "Overviews already available"
+                            } else {
+                                "Generate GDAL pyramid"
+                            });
+
+                        if button.clicked() {
+                            let local_dataset = view.raster_handler.as_owned_dataset();
+                            let tile_size = view.parameters.tile_size;
+
+                            if let Ok(mut ds) = local_dataset {
+                                self.app_state.pyramid_promise =
+                                    Some(poll_promise::Promise::spawn_thread(
+                                        "build_pyramid",
+                                        move || {
+                                            build_pyramid(&mut ds, "AVERAGE", tile_size)
+                                                .map_err(anyhow::Error::from)
+                                        },
+                                    ));
+                            }
                         }
                     }
                 }
+
+                // Refresh button
+                let button_response = ui.button("Refresh").on_hover_text("Refresh cache");
+                if button_response.clicked() {
+                    if let Some(view) = &mut self.viewer {
+                        let _ = view.refresh_cache();
+                    }
+                }
                 button_response.context_menu(|ui| {
-                    if ui.button("Reload").clicked() {
+                    if ui
+                        .button("Reload")
+                        .on_hover_text("Reload the file and reset the viewer")
+                        .clicked()
+                    {
                         if let Some(path) = &mut self.raster_path.clone() {
                             let _ = self.update_path_force(path.as_path(), ui.ctx().clone());
                         }

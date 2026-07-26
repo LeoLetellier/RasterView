@@ -135,7 +135,7 @@ impl RasterHandler {
             };
             if should_start {
                 self.ensure_stats_loaded(idx + 1);
-                println!("\n\n\t>>Loading stats for band {}", idx * 1);
+                tracing::info!(">>Loading stats for band {}", idx * 1);
                 break 'scan;
             }
         }

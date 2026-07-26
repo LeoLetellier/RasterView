@@ -82,13 +82,6 @@ impl ColorInterpretation {
             &color_data,
         ))
     }
-
-    // pub(crate) fn rgb_buffers_to_colorimage(
-    //     &self,
-    //     buffers: (Buffer<f32>, Buffer<f32>, Buffer<f32>),
-    // ) -> Arc<ColorImage> {
-    //     todo!()
-    // }
 }
 
 fn normalize_buffer_minmax_db(buffer: Buffer<f32>, minmax: (f32, f32), db_mode: bool) -> Vec<f32> {
