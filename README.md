@@ -13,8 +13,15 @@
 * **Fast display**: compiled rendering operations and tile caching allows seemless raster exploration. For very large rasters, consider creating overviews using GDAL (`gdaladdo` command) before opening the raster in the application. 
 * [**Standard color palettes**](./resources/colormaps/README.md): use perceptually perceptive colormaps for intuitive color rendering. ``#WIP``
 * **Cube exploration**: display per pixel profiles along all bands, usefull to explore time series. ``#TODO``
+* **Raw f32** mode `#TODO`
 
 ## 📖 About
+
+
+## ❌ Out of Scope
+
+* Multi-raster view, layer composition: use QGIS instead
+* Projection and background layer maps: only display rasters as a pixel grid
 
 
 ## 🔧 Installation

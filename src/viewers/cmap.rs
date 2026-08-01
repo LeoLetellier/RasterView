@@ -269,6 +269,11 @@ impl ColorMap {
         } / range;
 
         let resolve = move |idx: usize| -> usize { if invert { n - 1 - idx } else { idx } };
+        let (below, above) = if invert {
+            (self.above, self.below)
+        } else {
+            (self.below, self.above)
+        };
 
         data.par_iter()
             .zip(out.par_chunks_mut(4))
@@ -288,9 +293,9 @@ impl ColorMap {
                         let idx = t.rem_euclid(n_f).round() as usize;
                         self.lut.get(resolve(idx.min(n - 1)))
                     } else if t < 0.0 {
-                        self.below
+                        below
                     } else if t > (n - 1) as f32 {
-                        self.above
+                        above
                     } else {
                         self.lut.get(resolve(t.round() as usize))
                     }
