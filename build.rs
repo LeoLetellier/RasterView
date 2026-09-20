@@ -185,11 +185,10 @@ fn parse_cpt(text: &str, names: &HashMap<String, [u8; 3]>) -> Result<ParsedCpt, 
 
         let mut tokens: Vec<&str> = line.split_whitespace().collect();
         // strip an optional trailing annotation flag (A/L/U/...)
-        if let Some(last) = tokens.last() {
-            if last.len() <= 2 && last.chars().all(|c| c.is_ascii_alphabetic()) {
+        if let Some(last) = tokens.last()
+            && last.len() <= 2 && last.chars().all(|c| c.is_ascii_alphabetic()) {
                 tokens.pop();
             }
-        }
 
         let err = |e: String| format!("line {}: {e}", lineno + 1);
         match tokens.first().copied() {

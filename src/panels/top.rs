@@ -20,11 +20,9 @@ impl RasterView {
                 .button(button_file_name)
                 .on_hover_text("Select a raster file")
                 .clicked()
-            {
-                if let Some(path) = rfd::FileDialog::new().pick_file() {
+                && let Some(path) = rfd::FileDialog::new().pick_file() {
                     let _ = self.update_path(path.as_path(), ui.ctx().clone());
                 }
-            }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 // Light Dark mode switch
                 egui::widgets::global_theme_preference_switch(ui);
@@ -36,8 +34,8 @@ impl RasterView {
                         .has_all_overviews(view.parameters.tile_size);
 
                     // Poll any in-flight pyramid build first, so the UI reflects completion this frame.
-                    if let Some(promise) = &self.app_state.pyramid_promise {
-                        if let Some(result) = promise.ready() {
+                    if let Some(promise) = &self.app_state.pyramid_promise
+                        && let Some(result) = promise.ready() {
                             match result {
                                 Ok(()) => {
                                     let _ = view.raster_handler.refresh_dataset_only();
@@ -48,7 +46,6 @@ impl RasterView {
                             }
                             self.app_state.pyramid_promise = None;
                         }
-                    }
 
                     if self.app_state.pyramid_promise.is_some() {
                         // Build in progress: show spinner instead of the button.
@@ -86,21 +83,18 @@ impl RasterView {
 
                 // Refresh button
                 let button_response = ui.button("Refresh").on_hover_text("Refresh cache");
-                if button_response.clicked() {
-                    if let Some(view) = &mut self.viewer {
-                        let _ = view.refresh_cache();
+                if button_response.clicked()
+                    && let Some(view) = &mut self.viewer {
+                        view.refresh_cache();
                     }
-                }
                 button_response.context_menu(|ui| {
                     if ui
                         .button("Reload")
                         .on_hover_text("Reload the file and reset the viewer")
                         .clicked()
-                    {
-                        if let Some(path) = &mut self.raster_path.clone() {
+                        && let Some(path) = &mut self.raster_path.clone() {
                             let _ = self.update_path_force(path.as_path(), ui.ctx().clone());
                         }
-                    }
                 });
             });
         });

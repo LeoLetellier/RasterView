@@ -17,7 +17,7 @@ impl RasterHandler {
         }
     }
 
-    pub(crate) fn band_minmax_or_load(&mut self, band: usize) -> Option<(f64, f64)> {
+    pub(crate) fn _band_minmax_or_load(&mut self, band: usize) -> Option<(f64, f64)> {
         self.ensure_stats_loaded(band);
         let cache = self.bands_stats.lock().unwrap();
         match cache.get(band - 1) {
@@ -26,7 +26,7 @@ impl RasterHandler {
         }
     }
 
-    pub(crate) fn band_histogram(&self, band: usize) -> Option<(f64, f64, Vec<u64>)> {
+    pub(crate) fn _band_histogram(&self, band: usize) -> Option<(f64, f64, Vec<u64>)> {
         let cache = self.bands_stats.lock().unwrap();
         match cache.get(band) {
             Some(BandStatStatus::Loaded(stats)) => {
@@ -36,7 +36,7 @@ impl RasterHandler {
         }
     }
 
-    pub(crate) fn band_histogram_or_load(&mut self, band: usize) -> Option<(f64, f64, Vec<u64>)> {
+    pub(crate) fn _band_histogram_or_load(&mut self, band: usize) -> Option<(f64, f64, Vec<u64>)> {
         self.ensure_stats_loaded(band);
         let cache = self.bands_stats.lock().unwrap();
         match cache.get(band) {
@@ -57,7 +57,7 @@ impl RasterHandler {
         }
     }
 
-    pub(crate) fn band_percentile_or_load(&mut self, band: usize, percentile: f64) -> Option<f64> {
+    pub(crate) fn _band_percentile_or_load(&mut self, band: usize, percentile: f64) -> Option<f64> {
         self.ensure_stats_loaded(band);
         let cache = self.bands_stats.lock().unwrap();
         match cache.get(band) {
@@ -105,8 +105,8 @@ impl RasterHandler {
                 Ok(RasterBandStats {
                     min: stats.min,
                     max: stats.max,
-                    mean: stats.mean,
-                    std: stats.std_dev,
+                    _mean: stats.mean,
+                    _std: stats.std_dev,
                     counts: hist.counts().to_vec(),
                 })
             })();
@@ -135,7 +135,7 @@ impl RasterHandler {
             };
             if should_start {
                 self.ensure_stats_loaded(idx + 1);
-                tracing::info!(">>Loading stats for band {}", idx * 1);
+                tracing::info!(">>Loading stats for band {}", idx);
                 break 'scan;
             }
         }
@@ -146,8 +146,8 @@ impl RasterHandler {
 pub(crate) struct RasterBandStats {
     min: f64,
     max: f64,
-    mean: f64,
-    std: f64,
+    _mean: f64,
+    _std: f64,
     counts: Vec<u64>,
 }
 
@@ -160,15 +160,15 @@ pub(crate) enum BandStatStatus {
 }
 
 impl RasterBandStats {
-    pub(crate) fn minmax(&self) -> (f64, f64) {
+    pub(crate) fn _minmax(&self) -> (f64, f64) {
         (self.min, self.max)
     }
 
-    pub(crate) fn percentile(&self, percentile: f64) -> Option<f64> {
+    pub(crate) fn _percentile(&self, percentile: f64) -> Option<f64> {
         value_at_percentile(&self.counts, self.min, self.max, percentile)
     }
 
-    pub(crate) fn from_rasterband(raster_band: &RasterBand, buckets: usize) -> Result<Self> {
+    pub(crate) fn _from_rasterband(raster_band: &RasterBand, buckets: usize) -> Result<Self> {
         let stats = raster_band.get_statistics(true, true)?;
 
         let stats = stats.ok_or_else(|| {
@@ -186,8 +186,8 @@ impl RasterBandStats {
         Ok(Self {
             min,
             max,
-            mean,
-            std,
+            _mean: mean,
+            _std: std,
             counts,
         })
     }

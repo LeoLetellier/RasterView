@@ -65,8 +65,8 @@ impl Default for ViewerParams {
 #[derive(Debug, Default)]
 pub(crate) struct ViewerState {
     pub(crate) last_cursor_pos: Option<PlotPoint>,
-    pub(crate) last_pan_vel: Option<f64>,
-    pub(crate) last_zoom_vel: Option<f64>,
+    pub(crate) _last_pan_vel: Option<f64>,
+    pub(crate) _last_zoom_vel: Option<f64>,
     pub(crate) last_bounds: Option<PlotBounds>,
     pub(crate) last_screen_size: Option<(f64, f64)>,
 }

@@ -289,7 +289,6 @@ impl RasterView {
                             );
                         });
                     }
-                    _ => {}
                 }
                 ui.add_space(6.0);
                 ui.label(egui::RichText::new("Normalize over").small().weak());
@@ -545,7 +544,7 @@ impl Viewer {
             .refresh_cache(self.parameters.cache_size);
     }
 
-    fn load_minmax(&mut self) {
+    fn _load_minmax(&mut self) {
         let minmax = self.raster_handler.band_minmax(self.view_mode.panchro_band);
         if let Some((min, max)) = minmax {
             let new_range = (min as f32, max as f32);

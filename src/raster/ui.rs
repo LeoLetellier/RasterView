@@ -110,7 +110,7 @@ impl RasterHandler {
             ui.separator();
 
             for (idx, band) in self.raster_metadata.bands.iter().enumerate() {
-                ui.collapsing(format!("Band {} ({})", idx + 1, &band.dtype), |ui| {
+                ui.collapsing(format!("Band {} ({})", idx + 1, band.dtype), |ui| {
                     self.ui_band(band, ui);
                 });
             }

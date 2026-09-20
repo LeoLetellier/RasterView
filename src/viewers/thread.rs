@@ -1,6 +1,4 @@
-use crate::viewers::tasking::ViewStyle;
 use crate::viewers::tiler::{Tile, TileDescriptor};
-use crate::viewers::{ActiveViewer, ViewMode};
 use anyhow::Result;
 use gdal::Dataset;
 use std::collections::HashSet;

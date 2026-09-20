@@ -43,9 +43,10 @@ impl Default for ColorInterpretation {
 
 impl ColorInterpretation {
     pub(crate) fn new(colormap: ColorMap) -> Self {
-        let mut ci = ColorInterpretation::default();
-        ci.colormap = colormap;
-        ci
+        Self {
+            colormap,
+            ..Default::default()
+        }
     }
 
     pub(crate) fn with_ranging_values(&mut self, ranging_values: (f32, f32)) -> &Self {
@@ -306,9 +307,10 @@ impl ColorMap {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub(crate) enum DbMode {
     /// Use linear values
+    #[default]
     None,
     /// power/intensity ratio: 10 * log10(v)
     ///
@@ -343,14 +345,9 @@ impl DbMode {
     }
 }
 
-impl Default for DbMode {
-    fn default() -> Self {
-        DbMode::None
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub(crate) enum CyclicWrap {
+    #[default]
     None,
     Radian,
     Degree,
@@ -368,11 +365,5 @@ impl CyclicWrap {
             CyclicWrap::Degree => Some((-360.0, 360.0)),
             CyclicWrap::Custom(lo, hi) => Some((lo.into_inner(), hi.into_inner())),
         }
-    }
-}
-
-impl Default for CyclicWrap {
-    fn default() -> Self {
-        Self::None
     }
 }

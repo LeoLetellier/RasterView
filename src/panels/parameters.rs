@@ -1,5 +1,5 @@
 use crate::RasterView;
-use egui::{Label, Layout, Ui};
+use egui::Ui;
 
 impl RasterView {
     pub(crate) fn ui_parameters_panel(&mut self, ui: &mut Ui) {

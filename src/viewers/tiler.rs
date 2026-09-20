@@ -1,18 +1,13 @@
-use crate::viewers::coords::{Bbox, GeoBox, PixelBox};
+use crate::viewers::Viewer;
+use crate::viewers::coords::{Bbox, PixelBox};
 use crate::viewers::tasking::ViewStyle;
-use crate::viewers::{ActiveViewer, Viewer};
 
-use anyhow::{Result, anyhow};
 use egui::{TextureHandle, vec2};
 use egui_plot::{PlotImage, PlotUi};
+use quick_cache::Weighter;
 use quick_cache::sync::Cache;
-use quick_cache::{
-    Weighter,
-    sync::{EntryAction, EntryResult},
-};
 
 use egui_plot::PlotPoint;
-use std::collections::HashSet;
 use std::fmt;
 use std::hash::Hash;
 
@@ -21,11 +16,7 @@ impl Viewer {
     pub(crate) fn need_tiles(&self) -> Option<Vec<TileDescriptor>> {
         let raster_size = self.raster_handler.raster_size();
         let lb = self.state.last_bounds?;
-        let view_style = if let Some(vs) = self.task_view() {
-            vs
-        } else {
-            return None;
-        };
+        let view_style = self.task_view()?;
 
         let (full_width, full_height) = raster_size;
 
@@ -217,7 +208,7 @@ impl TileDescriptor {
         (dx * dx + dy * dy).sqrt()
     }
 
-    pub(crate) fn size(&self) -> [usize; 2] {
+    pub(crate) fn _size(&self) -> [usize; 2] {
         [self.pixel_bbox.width(), self.pixel_bbox.height()]
     }
 }

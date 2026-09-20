@@ -1,5 +1,5 @@
 use crate::viewers::Viewer;
-use crate::viewers::coords::{Bbox, PixelBox};
+use crate::viewers::coords::Bbox;
 use crate::viewers::tiler::TileDescriptor;
 use egui::Ui;
 use egui_plot::{Plot, PlotBounds, PlotPoint, PlotPoints, PlotUi, Polygon};
@@ -21,12 +21,11 @@ impl Viewer {
         let tiles = tiles_needed
             .clone()
             .zip(last_view_center)
-            .map(|(tn, lvc)| {
+            .and_then(|(tn, lvc)| {
                 self.raster_handler
                     .request_cache_tiles(&tn, lvc, self.view_mode.clone())
                     .ok()
-            })
-            .flatten();
+            });
 
         let ppp = ui.ctx().pixels_per_point() as f64;
         let mut last_bounds = None;
@@ -77,12 +76,11 @@ impl Viewer {
             last_screen_size = Some((rect.width() as f64 * ppp, rect.height() as f64 * ppp));
             last_bounds = Some(plot_ui.plot_bounds());
 
-            tiles.map(|ot| ot.iter().for_each(|t| t.plot_ui(plot_ui)));
-            if self.parameters.show_tile_bounds {
-                if let Some(tiles) = tiles_needed {
+            if let Some(ot) = tiles { ot.iter().for_each(|t| t.plot_ui(plot_ui)) }
+            if self.parameters.show_tile_bounds
+                && let Some(tiles) = tiles_needed {
                     tiles.iter().for_each(|t| t.ui_tile_bounds(plot_ui));
                 }
-            }
         });
 
         self.state.last_screen_size = last_screen_size;

@@ -17,7 +17,7 @@ impl RasterView {
                     );
                 });
 
-                ui.horizontal_centered(|ui| {});
+                ui.horizontal_centered(|_| {});
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     panel_button(
@@ -41,8 +41,8 @@ impl RasterView {
                         ui.label(format!("{ms:.1} ms"));
                     }
 
-                    if let Some(view) = &self.viewer {
-                        if let Some(px_pos) = view.state.last_cursor_pos {
+                    if let Some(view) = &self.viewer
+                        && let Some(px_pos) = view.state.last_cursor_pos {
                             // Get pixel integers, so floor the value
                             let x_pos = px_pos.x.floor();
                             let y_pos = px_pos.y.floor();
@@ -54,7 +54,6 @@ impl RasterView {
                             ui.label(format!("px: ({:.0},{:.0})", x_pos, y_pos));
                             // grid-four, globe-simple
                         }
-                    }
                 });
             });
     }

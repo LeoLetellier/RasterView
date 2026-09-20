@@ -1,7 +1,5 @@
 use anyhow::Result;
-use eframe::App;
 use egui_phosphor as icon;
-use std::default;
 use std::path::{Path, PathBuf};
 
 use crate::panels::{LeftPanel, RightPanel};
@@ -81,7 +79,7 @@ impl RasterView {
     }
 
     pub(crate) fn update_path_force(&mut self, new_path: &Path, ctx: egui::Context) -> Result<()> {
-        if let Some(_) = &self.raster_path {
+        if self.raster_path.is_some() {
             self.viewer = Some(Viewer::with_raster(new_path, ctx)?);
         } else {
             // First raster to initialize
@@ -97,11 +95,10 @@ impl eframe::App for RasterView {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         // Drag n Drop
         ui.ctx().input(|i| {
-            if let Some(dropped) = i.raw.dropped_files.first() {
-                if let Some(path) = &dropped.path {
+            if let Some(dropped) = i.raw.dropped_files.first()
+                && let Some(path) = &dropped.path {
                     let _ = self.update_path(&path.to_path_buf(), ui.ctx().clone());
                 }
-            }
         });
 
         // Show top panel first for menus
@@ -156,11 +153,10 @@ impl eframe::App for RasterView {
                     let button = egui::Button::new("Open a raster file to begin...")
                         .min_size(egui::Vec2::new(360.0, 48.0));
 
-                    if ui.add(button).clicked() {
-                        if let Some(path) = rfd::FileDialog::new().pick_file() {
+                    if ui.add(button).clicked()
+                        && let Some(path) = rfd::FileDialog::new().pick_file() {
                             let _ = self.update_path(path.as_path(), ui.ctx().clone());
                         }
-                    }
 
                     ui.style_mut().visuals = old_visuals;
                 },

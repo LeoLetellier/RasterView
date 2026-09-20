@@ -1,7 +1,6 @@
 use anyhow::Result;
 use gdal::{Dataset, Metadata, raster::RasterBand};
 use std::collections::HashSet;
-use std::ops::DerefMut;
 use std::sync::{Arc, Mutex};
 use std::{ops::Deref, path::Path};
 
@@ -41,7 +40,7 @@ impl Deref for RasterHandler {
 impl RasterHandler {
     const CACHE_EXPECTED_MAXIMUM_ELEMENTS: usize = 500;
 
-    pub(crate) fn raster_path(&self) -> &String {
+    pub(crate) fn _raster_path(&self) -> &String {
         &self.path
     }
 
@@ -91,7 +90,7 @@ impl RasterHandler {
     pub(crate) fn get_pixel_geotransform(&self) -> Option<coords::GeoTransform> {
         self.geo_transform()
             .ok()
-            .map(|gt| coords::GeoTransform::from(gt))
+            .map(coords::GeoTransform::from)
     }
 
     pub(crate) fn refresh_cache(&mut self, cache_size: u64) {
@@ -103,7 +102,7 @@ impl RasterHandler {
         self.on_screen_texture_retainer = Default::default();
     }
 
-    pub(crate) fn band_is_complex(&self, band: usize) -> bool {
+    pub(crate) fn band_is_complex(&self, _band: usize) -> bool {
         false // TODO
     }
 
@@ -139,7 +138,7 @@ impl RasterHandler {
                 };
                 let ov_size = ov.size().0;
                 finest_available = finest_available.min(ov_size);
-                coarsest_available = coarsest_available.min(ov_size).max(0);
+                coarsest_available = coarsest_available.min(ov_size);
                 let _ = finest_available; // silence unused if not needed elsewhere
                 if ov_size < coarsest_available || i == 0 {
                     coarsest_available = ov_size;
@@ -160,7 +159,7 @@ impl RasterHandler {
 #[derive(Debug)]
 pub(crate) struct RasterMetadata {
     driver: String,
-    description: String,
+    _description: String,
     size: (usize, usize),
     band_nb: usize,
     projection: String,
@@ -186,7 +185,7 @@ impl RasterMetadata {
 
         Ok(RasterMetadata {
             driver: dataset.driver().short_name(),
-            description: dataset.description()?,
+            _description: dataset.description()?,
             size,
             band_nb: dataset.raster_count(),
             projection: dataset.projection(),
@@ -199,11 +198,11 @@ impl RasterMetadata {
 
 #[derive(Debug)]
 pub(crate) struct BandMetadata {
-    band_id: usize,
-    description: String,
+    _band_id: usize,
+    _description: String,
     dtype: String,
     unit: String,
-    overview_nb: usize,
+    _overview_nb: usize,
     ndv: Option<f64>,
     scale: Option<f64>,
     offset: Option<f64>,
@@ -211,10 +210,10 @@ pub(crate) struct BandMetadata {
 }
 
 impl BandMetadata {
-    fn from_band(band_id: usize, band: &RasterBand) -> Self {
-        let overview_nb = band.overview_count().unwrap_or(0) as usize;
+    fn from_band(_band_id: usize, band: &RasterBand) -> Self {
+        let _overview_nb = band.overview_count().unwrap_or(0) as usize;
         let mut overviews = vec![];
-        for k in 0..overview_nb {
+        for k in 0.._overview_nb {
             if let Ok(o) = band.overview(k) {
                 let s = o.size();
                 overviews.push([k, s.0, s.1]);
@@ -222,11 +221,11 @@ impl BandMetadata {
         }
 
         BandMetadata {
-            band_id,
-            description: band.description().unwrap_or_default(),
+            _band_id,
+            _description: band.description().unwrap_or_default(),
             dtype: band.band_type().name(),
             unit: band.unit(),
-            overview_nb,
+            _overview_nb,
             ndv: band.no_data_value(),
             scale: band.scale(),
             offset: band.offset(),

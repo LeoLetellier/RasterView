@@ -31,7 +31,7 @@ impl TileDescriptor {
                         .panchro_buffer_to_colorimage(buffer),
                 )
             }
-            ViewStyle::PanchroCpx(style) => {
+            ViewStyle::PanchroCpx(_style) => {
                 todo!()
             }
             ViewStyle::Color(style) => {
@@ -45,7 +45,7 @@ impl TileDescriptor {
 }
 
 #[derive(Debug, Eq, PartialEq, Hash, Clone)]
-struct PanchroTask {
+pub(crate) struct PanchroTask {
     pub(crate) band: usize,
     pub(crate) color_interpretation: ColorInterpretation,
 }
@@ -60,7 +60,7 @@ impl PanchroTask {
 }
 
 #[derive(Debug, Eq, PartialEq, Hash, Clone)]
-struct PanchroCpxTask {
+pub(crate) struct PanchroCpxTask {
     band: usize,
     color_interpretation: ColorInterpretation,
     cpx_mode: CpxMode,
@@ -77,7 +77,7 @@ impl PanchroCpxTask {
 }
 
 #[derive(Debug, Eq, PartialEq, Hash, Clone)]
-struct ColorTask {
+pub(crate) struct ColorTask {
     band_r: usize,
     band_g: usize,
     band_b: usize,
