@@ -1,5 +1,6 @@
 use anyhow::Result;
 use egui_plot::{PlotBounds, PlotPoint};
+use gdal::raster::ResampleAlg::NearestNeighbour;
 use std::path::Path;
 
 use crate::raster::RasterHandler;
@@ -27,7 +28,7 @@ pub(crate) struct Viewer {
     pub(crate) state: ViewerState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct ViewerParams {
     /// Size in pixels of the tiles
     ///
@@ -47,6 +48,14 @@ pub(crate) struct ViewerParams {
     pub(crate) cache_size: u64,
     pub(crate) auto_load_band_stats: bool,
     pub(crate) show_tile_bounds: bool,
+    pub(crate) resampling: ViewerResampling,
+    pub(crate) view_downsampling: f32,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub(crate) enum ViewerResampling {
+    Nearest,
+    Bilinear,
 }
 
 impl Default for ViewerParams {
@@ -58,6 +67,8 @@ impl Default for ViewerParams {
             cache_size: 256 * 1024 * 1024, // 256MB cache size
             auto_load_band_stats: true,
             show_tile_bounds,
+            resampling: ViewerResampling::Nearest,
+            view_downsampling: 1.0,
         }
     }
 }
@@ -69,6 +80,19 @@ pub(crate) struct ViewerState {
     pub(crate) _last_zoom_vel: Option<f64>,
     pub(crate) last_bounds: Option<PlotBounds>,
     pub(crate) last_screen_size: Option<(f64, f64)>,
+    pub(crate) background_loading: BgLoading,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct BgLoading {
+    pub(crate) loading_tile: bool,
+    pub(crate) loading_stat: bool,
+}
+
+impl BgLoading {
+    pub(crate) fn any_loading(&self) -> bool {
+        self.loading_stat & self.loading_tile
+    }
 }
 
 impl Viewer {

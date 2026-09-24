@@ -95,10 +95,9 @@ impl eframe::App for RasterView {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         // Drag n Drop
         ui.ctx().input(|i| {
-            if let Some(dropped) = i.raw.dropped_files.first()
-                && let Some(path) = &dropped.path {
-                    let _ = self.update_path(&path.to_path_buf(), ui.ctx().clone());
-                }
+            if let Some(dropped) = i.raw.dropped_files.first() {
+                let _ = self.update_path(&dropped.path().to_path_buf(), ui.ctx().clone());
+            }
         });
 
         // Show top panel first for menus
@@ -154,9 +153,10 @@ impl eframe::App for RasterView {
                         .min_size(egui::Vec2::new(360.0, 48.0));
 
                     if ui.add(button).clicked()
-                        && let Some(path) = rfd::FileDialog::new().pick_file() {
-                            let _ = self.update_path(path.as_path(), ui.ctx().clone());
-                        }
+                        && let Some(path) = rfd::FileDialog::new().pick_file()
+                    {
+                        let _ = self.update_path(path.as_path(), ui.ctx().clone());
+                    }
 
                     ui.style_mut().visuals = old_visuals;
                 },

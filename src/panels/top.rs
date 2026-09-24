@@ -20,9 +20,10 @@ impl RasterView {
                 .button(button_file_name)
                 .on_hover_text("Select a raster file")
                 .clicked()
-                && let Some(path) = rfd::FileDialog::new().pick_file() {
-                    let _ = self.update_path(path.as_path(), ui.ctx().clone());
-                }
+                && let Some(path) = rfd::FileDialog::new().pick_file()
+            {
+                let _ = self.update_path(path.as_path(), ui.ctx().clone());
+            }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 // Light Dark mode switch
                 egui::widgets::global_theme_preference_switch(ui);
@@ -35,17 +36,18 @@ impl RasterView {
 
                     // Poll any in-flight pyramid build first, so the UI reflects completion this frame.
                     if let Some(promise) = &self.app_state.pyramid_promise
-                        && let Some(result) = promise.ready() {
-                            match result {
-                                Ok(()) => {
-                                    let _ = view.raster_handler.refresh_dataset_only();
-                                }
-                                Err(e) => {
-                                    eprintln!("pyramid build failed: {e:?}");
-                                }
+                        && let Some(result) = promise.ready()
+                    {
+                        match result {
+                            Ok(()) => {
+                                let _ = view.raster_handler.refresh_dataset_only();
                             }
-                            self.app_state.pyramid_promise = None;
+                            Err(e) => {
+                                eprintln!("pyramid build failed: {e:?}");
+                            }
                         }
+                        self.app_state.pyramid_promise = None;
+                    }
 
                     if self.app_state.pyramid_promise.is_some() {
                         // Build in progress: show spinner instead of the button.
@@ -84,18 +86,44 @@ impl RasterView {
                 // Refresh button
                 let button_response = ui.button("Refresh").on_hover_text("Refresh cache");
                 if button_response.clicked()
-                    && let Some(view) = &mut self.viewer {
-                        view.refresh_cache();
-                    }
+                    && let Some(view) = &mut self.viewer
+                {
+                    view.refresh_cache();
+                }
                 button_response.context_menu(|ui| {
                     if ui
                         .button("Reload")
                         .on_hover_text("Reload the file and reset the viewer")
                         .clicked()
-                        && let Some(path) = &mut self.raster_path.clone() {
-                            let _ = self.update_path_force(path.as_path(), ui.ctx().clone());
-                        }
+                        && let Some(path) = &mut self.raster_path.clone()
+                    {
+                        let _ = self.update_path_force(path.as_path(), ui.ctx().clone());
+                    }
                 });
+
+                // Loading spin
+                if let Some(view) = &self.viewer {
+                    let loading = &view.state.background_loading;
+
+                    if loading.any_loading() {
+                        let mut items = Vec::new();
+
+                        if loading.loading_tile {
+                            items.push("tile");
+                        }
+
+                        if loading.loading_stat {
+                            items.push("stat");
+                        }
+
+                        let message = format!("Loading: {}", items.join(", "));
+
+                        ui.add(egui::Spinner::new()).on_hover_text(message);
+                    } else {
+                        ui.label(egui::RichText::from(icon::regular::CHECK_FAT))
+                            .on_hover_text("Nothing to load");
+                    }
+                }
             });
         });
     }

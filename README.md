@@ -18,6 +18,14 @@
 ## 📖 About
 
 
+## 📌 TODO
+
+- [ ] separate loaded raster from view parameters
+- [ ] allow alternatively for loading 2d arrays with user given size and format type
+- [ ] Fix view parameters with user inputs
+- [ ] Clean parameters export to user
+
+
 ## ❌ Out of Scope
 
 * Multi-raster view, layer composition: use QGIS instead

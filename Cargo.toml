@@ -15,16 +15,16 @@ keywords = ["raster", "viewer", "gdal"]
 build = "build.rs"
 
 [dependencies]
-anyhow = "1.0.103"
-clap = "4.6.1"
-eframe = { version = "0.35.0" }
-egui = "0.35.0"
-egui-phosphor = { git = "https://github.com/crumblingstatue/egui-phosphor", branch = "egui-035", features = ["bold", "fill", "light", "thin"] }
-egui_extras = "0.35.0"
-egui_plot = "0.36.0"
+anyhow = "1.0.104"
+clap = "4.6.7"
+eframe = { version = "0.36.2" }
+egui = "0.36.2"
+egui-phosphor = { git = "https://github.com/crumblingstatue/egui-phosphor", branch = "egui-036", features = ["bold", "fill", "light", "thin"] }
+egui_extras = "0.36.2"
+egui_plot = "0.37.0"
 # ndarray = { version = "0.17.2", features = ["rayon"] }
 num-traits = "0.2.19"
-ordered-float = "5.3.0"
+ordered-float = "5.5.0"
 poll-promise = "0.3.0"
 quick_cache = "0.7.0"
 rayon = "1.12.0"
