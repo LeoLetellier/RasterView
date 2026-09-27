@@ -1,4 +1,3 @@
-use anyhow;
 use egui::{Context, Id};
 use std::path::{Path, PathBuf};
 
@@ -165,28 +164,41 @@ impl RasterView {
                     });
                     ui.end_row();
 
-                    ui.label(""); // spacer under the checkbox row
                     ui.add_enabled_ui(buf.has_geotransform, |ui| {
                         egui::Grid::new("geotransform_grid")
-                            .num_columns(3)
+                            .num_columns(2)
                             .spacing([6.0, 4.0])
                             .show(ui, |ui| {
                                 let fields = [
-                                    ("Origin X", &mut buf.geotransform_buf.x_off),
-                                    ("Pixel W", &mut buf.geotransform_buf.x_res),
-                                    ("X rot", &mut buf.geotransform_buf.x_rot),
-                                    ("Origin Y", &mut buf.geotransform_buf.y_off),
-                                    ("Y rot", &mut buf.geotransform_buf.y_rot),
-                                    ("Pixel H", &mut buf.geotransform_buf.y_res),
+                                    (
+                                        "Origin X",
+                                        &mut buf.geotransform_buf.x_off,
+                                        "Origin Y",
+                                        &mut buf.geotransform_buf.y_off,
+                                    ),
+                                    (
+                                        "Res X",
+                                        &mut buf.geotransform_buf.x_res,
+                                        "Res Y",
+                                        &mut buf.geotransform_buf.y_res,
+                                    ),
+                                    (
+                                        "Rot X",
+                                        &mut buf.geotransform_buf.x_rot,
+                                        "Rot Y",
+                                        &mut buf.geotransform_buf.y_rot,
+                                    ),
                                 ];
-                                for (i, (label, value)) in fields.into_iter().enumerate() {
+                                for (label_a, val_a, label_b, val_b) in fields {
                                     ui.vertical(|ui| {
-                                        ui.small(label);
-                                        ui.add(egui::DragValue::new(value).speed(0.01));
+                                        ui.small(label_a);
+                                        ui.add(egui::DragValue::new(val_a).speed(0.01));
                                     });
-                                    if i % 3 == 2 {
-                                        ui.end_row();
-                                    }
+                                    ui.vertical(|ui| {
+                                        ui.small(label_b);
+                                        ui.add(egui::DragValue::new(val_b).speed(0.01));
+                                    });
+                                    ui.end_row();
                                 }
                             });
                     });

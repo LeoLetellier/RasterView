@@ -42,18 +42,19 @@ impl RasterView {
                     }
 
                     if let Some(view) = &self.viewer
-                        && let Some(px_pos) = view.state.last_cursor_pos {
-                            // Get pixel integers, so floor the value
-                            let x_pos = px_pos.x.floor();
-                            let y_pos = px_pos.y.floor();
+                        && let Some(px_pos) = view.state.last_cursor_pos
+                    {
+                        // Get pixel integers, so floor the value
+                        let x_pos = px_pos.x.floor();
+                        let y_pos = px_pos.y.floor();
 
-                            if let Some(gt) = view.raster_handler.get_pixel_geotransform() {
-                                let geo_pos = gt.pixel_to_geo(x_pos, y_pos);
-                                ui.label(format!(" | geo: ({:.3},{:.3})", geo_pos.0, geo_pos.1));
-                            }
-                            ui.label(format!("px: ({:.0},{:.0})", x_pos, y_pos));
-                            // grid-four, globe-simple
+                        if let Some(gt) = view.raster_handler.get_pixel_geotransform() {
+                            let geo_pos = gt.pixel_to_geo(x_pos, y_pos);
+                            ui.label(format!(" | geo: ({:.3},{:.3})", geo_pos.0, geo_pos.1));
                         }
+                        ui.label(format!("px: ({:.0},{:.0})", x_pos, y_pos));
+                        // grid-four, globe-simple
+                    }
                 });
             });
     }

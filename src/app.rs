@@ -78,12 +78,12 @@ impl RasterView {
         }
 
         let viewer = Viewer::with_raster(new_path, ctx.clone());
-        if let Err(_) = viewer {
-            self.app_state.show_vrt_form = true;
-            self.app_state.vrt_form.path_buf = new_path.to_string_lossy().into_owned();
-        } else if let Ok(view) = viewer {
+        if let Ok(view) = viewer {
             self.viewer = Some(view);
             self.raster_path = Some(new_path.into());
+        } else {
+            self.app_state.show_vrt_form = true;
+            self.app_state.vrt_form.path_buf = new_path.to_string_lossy().into_owned();
         }
         Ok(())
     }
@@ -109,7 +109,7 @@ impl eframe::App for RasterView {
         // Drag n Drop
         ui.ctx().input(|i| {
             if let Some(dropped) = i.raw.dropped_files.first() {
-                let _ = self.update_path(&dropped.path().to_path_buf(), ui.ctx().clone());
+                let _ = self.update_path(&dropped.path(), ui.ctx().clone());
             }
         });
 

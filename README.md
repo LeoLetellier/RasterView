@@ -29,10 +29,11 @@
 - [ ] Add keybindings
 - [ ] Add a decrease resolution parameter to allow load data at a resolution coarser than actually could have displayed
 - [ ] Add extended loading strategy, by decreasing loading charge by checking panning/zooming speed and then loading coarser tiles until the view stabilize, and drop all in middle
-- [ ] Invert y-axis display
+- [x] Invert y-axis display
 - [ ] Add resolution to main dataset metadata display
 - [ ] Show all file system info
 - [ ] Implement loading spinner and stats waiting
+- [ ] Add clap cli cmd
 
 
 ## ❌ Out of Scope

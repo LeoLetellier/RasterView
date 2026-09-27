@@ -5,7 +5,7 @@ use gdal::errors::Result;
 use gdal::vsi::create_mem_file;
 
 use crate::raster::GeoTransform;
-use gdal::config::{clear_config_option, set_config_option};
+use gdal::config::set_config_option;
 
 #[derive(Debug, Default, PartialEq)]
 pub struct VrtParameters {

@@ -1,9 +1,8 @@
 use anyhow::Result;
 use egui_plot::{PlotBounds, PlotPoint};
-use gdal::raster::ResampleAlg::NearestNeighbour;
 use std::path::Path;
 
-use crate::raster::{RasterHandler, xml_vrt::VrtParameters};
+use crate::raster::RasterHandler;
 use cmap::ColorInterpretation;
 
 pub(crate) mod cmap;

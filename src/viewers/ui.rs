@@ -1,8 +1,10 @@
+use std::ops::RangeInclusive;
+
 use crate::viewers::Viewer;
 use crate::viewers::coords::Bbox;
 use crate::viewers::tiler::TileDescriptor;
 use egui::Ui;
-use egui_plot::{Plot, PlotBounds, PlotPoint, PlotPoints, PlotUi, Polygon};
+use egui_plot::{GridInput, GridMark, Plot, PlotBounds, PlotPoint, PlotPoints, PlotUi, Polygon};
 
 impl Viewer {
     pub(crate) fn ui(&mut self, ui: &mut Ui) {
@@ -33,25 +35,17 @@ impl Viewer {
 
         let raster_size = self.raster_handler.raster_size();
         // Avoid weird default plot position
-        let plot = if raster_size.0 > raster_size.1 {
-            Plot::new("main_plot")
-                .default_x_bounds(-0.1 * raster_size.0 as f64, 1.1 * raster_size.0 as f64)
-                .data_aspect(1.0)
-                .pan_pointer_button(egui::PointerButton::Primary)
-                .boxed_zoom_pointer_button(egui::PointerButton::Secondary)
-                .allow_scroll(false)
-                .allow_zoom(false)
-                .show_grid(false)
-        } else {
-            Plot::new("main_plot")
-                .default_x_bounds(-0.1 * raster_size.1 as f64, 1.1 * raster_size.1 as f64)
-                .data_aspect(1.0)
-                .pan_pointer_button(egui::PointerButton::Primary)
-                .boxed_zoom_pointer_button(egui::PointerButton::Secondary)
-                .allow_scroll(false)
-                .allow_zoom(false)
-                .show_grid(false)
-        };
+        let plot_bound = raster_size.0.max(raster_size.1) as f64;
+        let plot = Plot::new("main_plot")
+            .default_x_bounds(-0.1 * plot_bound, 1.1 * plot_bound)
+            .data_aspect(1.0)
+            .pan_pointer_button(egui::PointerButton::Primary)
+            .boxed_zoom_pointer_button(egui::PointerButton::Secondary)
+            .allow_scroll(false)
+            .allow_zoom(false)
+            .show_grid(false)
+            .y_axis_formatter(inverted_y_formatter(raster_size.1 as f64))
+            .y_grid_spacer(inverted_y_grid_spacer(raster_size.1 as f64));
 
         // Grab wheel delta + modifier state BEFORE the closure borrows `ui`.
         let (wheel_delta_y, ctrl_held): (Option<f32>, bool) = ui.input(|i| {
@@ -76,11 +70,14 @@ impl Viewer {
             last_screen_size = Some((rect.width() as f64 * ppp, rect.height() as f64 * ppp));
             last_bounds = Some(plot_ui.plot_bounds());
 
-            if let Some(ot) = tiles { ot.iter().for_each(|t| t.plot_ui(plot_ui)) }
+            if let Some(ot) = tiles {
+                ot.iter().for_each(|t| t.plot_ui(plot_ui))
+            }
             if self.parameters.show_tile_bounds
-                && let Some(tiles) = tiles_needed {
-                    tiles.iter().for_each(|t| t.ui_tile_bounds(plot_ui));
-                }
+                && let Some(tiles) = tiles_needed
+            {
+                tiles.iter().for_each(|t| t.ui_tile_bounds(plot_ui));
+            }
         });
 
         self.state.last_screen_size = last_screen_size;
@@ -167,5 +164,37 @@ fn scroll_zoom(
 
     if (new_max[0] - new_min[0]).abs() > 1e-12 && (new_max[1] - new_min[1]).abs() > 1e-12 {
         plot_ui.set_plot_bounds(PlotBounds::from_min_max(new_min, new_max));
+    }
+}
+
+/// Returns a y-axis formatter that displays `size - y` instead of `y`.
+///
+/// This helps to match raster reference, where origin is upper left instead of lower left.
+fn inverted_y_formatter(offset: f64) -> impl Fn(GridMark, &RangeInclusive<f64>) -> String {
+    move |mark: GridMark, _range: &RangeInclusive<f64>| {
+        let inverted = offset - mark.value;
+        format!("{:.0}", inverted)
+    }
+}
+
+/// Correct the tick selection when using an offset
+///
+/// The tick will now be aligned to the new zero instead of the offset (old zero),
+/// and all ticks stay round numbers
+fn inverted_y_grid_spacer(offset: f64) -> impl Fn(GridInput) -> Vec<GridMark> {
+    let inner = egui_plot::log_grid_spacer(10);
+    move |input: GridInput| {
+        let (orig_min, orig_max) = input.bounds;
+        let inv_input = GridInput {
+            bounds: (offset - orig_max, offset - orig_min),
+            base_step_size: input.base_step_size,
+        };
+        inner(inv_input)
+            .into_iter()
+            .map(|mark| GridMark {
+                value: offset - mark.value,
+                step_size: mark.step_size,
+            })
+            .collect()
     }
 }
