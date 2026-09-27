@@ -8,6 +8,18 @@ impl RasterView {
         ui.separator();
         ui.add_space(10.0);
 
+        // viewer
+        //  resampling: nn, bilin
+        //  show tiles
+
+        // Caching
+        //  cache size
+
+        // stats
+        //  allow fetch cached
+        //  allow approx
+        //  histo bins
+
         if let Some(view) = &mut self.viewer {
             let _old_params = view.parameters.clone();
 

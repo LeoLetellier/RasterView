@@ -1,3 +1,4 @@
+use crate::raster::GeoTransform;
 use egui_plot::PlotPoint;
 use num_traits::NumCast;
 use std::ops::{Div, Sub};
@@ -293,26 +294,6 @@ impl Bbox<f64> for GeoBox {
 }
 
 /// GDAL geotransform definition
-///
-/// > A geotransform is an affine transformation from the image coordinate space (row, column), also known as (pixel, line) to the georeferenced coordinate space (projected or geographic coordinates).
-///
-/// [GDAL documentation](https://gdal.org/en/stable/tutorials/geotransforms_tut.html)
-#[derive(Debug)]
-pub(crate) struct GeoTransform {
-    /// x-coordinate of the upper-left corner of the upper-left pixel
-    x_off: f64,
-    /// w-e pixel resolution / pixel width
-    x_res: f64,
-    /// row rotation (typically zero)
-    x_rot: f64,
-    /// y-coordinate of the upper-left corner of the upper-left pixel
-    y_off: f64,
-    /// column rotation (typically zero)
-    y_rot: f64,
-    /// n-s pixel resolution / pixel height (negative value for a north-up image)
-    y_res: f64,
-}
-
 impl GeoTransform {
     /// X and Y offsets of the geotransform
     ///
@@ -337,14 +318,7 @@ impl GeoTransform {
     ///
     /// To add a rotation, use `with_rotation()` instead
     pub(crate) fn new(x_off: f64, x_res: f64, y_off: f64, y_res: f64) -> GeoTransform {
-        GeoTransform {
-            x_off,
-            x_res,
-            x_rot: 0.0,
-            y_off,
-            y_rot: 0.0,
-            y_res,
-        }
+        GeoTransform::from([x_off, x_res, 0.0, y_off, 0.0, y_res])
     }
 
     /// New geotransform with rotation
@@ -356,14 +330,7 @@ impl GeoTransform {
         y_res: f64,
         y_rot: f64,
     ) -> GeoTransform {
-        GeoTransform {
-            x_off,
-            x_res,
-            x_rot,
-            y_off,
-            y_rot,
-            y_res,
-        }
+        GeoTransform::from([x_off, x_res, x_rot, y_off, y_rot, y_res])
     }
 
     /// Pixel/line -> geo coordinates.
@@ -403,19 +370,6 @@ impl GeoTransform {
             self.y_off,
             self.y_off + self.y_res * raster_size.1 as f64,
         )
-    }
-}
-
-impl From<[f64; 6]> for GeoTransform {
-    fn from(value: [f64; 6]) -> Self {
-        GeoTransform {
-            x_off: value[0],
-            x_res: value[1],
-            x_rot: value[2],
-            y_off: value[3],
-            y_rot: value[4],
-            y_res: value[5],
-        }
     }
 }
 

@@ -8,6 +8,7 @@ pub(crate) mod metadata;
 pub(crate) mod palette;
 pub(crate) mod parameters;
 pub(crate) mod top;
+pub(crate) mod vrt_form;
 
 pub(super) trait Panel: PartialEq {
     fn symbol(&self) -> RichText;

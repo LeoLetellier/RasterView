@@ -7,7 +7,7 @@ use std::{ops::Deref, path::Path};
 use crate::{
     raster::stats::BandStatStatus,
     viewers::{
-        coords::{self, GeoBox, GeoTransform},
+        coords::GeoBox,
         thread::TextureWorker,
         tiler::{TextureCache, Tile, TileDescriptor, TileWeighter},
     },
@@ -16,6 +16,7 @@ use crate::{
 pub(crate) mod loading;
 pub(crate) mod stats;
 pub(crate) mod ui;
+pub(crate) mod xml_vrt;
 
 #[derive(Debug)]
 pub(crate) struct RasterHandler {
@@ -87,10 +88,8 @@ impl RasterHandler {
     }
 
     /// Fetch the raster geotransform for conversion between `PixelBox` and `GeoBox`
-    pub(crate) fn get_pixel_geotransform(&self) -> Option<coords::GeoTransform> {
-        self.geo_transform()
-            .ok()
-            .map(coords::GeoTransform::from)
+    pub(crate) fn get_pixel_geotransform(&self) -> Option<GeoTransform> {
+        self.geo_transform().ok().map(GeoTransform::from)
     }
 
     pub(crate) fn refresh_cache(&mut self, cache_size: u64) {
@@ -230,6 +229,51 @@ impl BandMetadata {
             scale: band.scale(),
             offset: band.offset(),
             overviews,
+        }
+    }
+}
+
+/// > A geotransform is an affine transformation from the image coordinate space (row, column), also known as (pixel, line) to the georeferenced coordinate space (projected or geographic coordinates).
+///
+/// [GDAL documentation](https://gdal.org/en/stable/tutorials/geotransforms_tut.html)
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GeoTransform {
+    /// x-coordinate of the upper-left corner of the upper-left pixel
+    pub x_off: f64,
+    /// w-e pixel resolution / pixel width
+    pub x_res: f64,
+    /// row rotation (typically zero)
+    pub x_rot: f64,
+    /// y-coordinate of the upper-left corner of the upper-left pixel
+    pub y_off: f64,
+    /// column rotation (typically zero)
+    pub y_rot: f64,
+    /// n-s pixel resolution / pixel height (negative value for a north-up image)
+    pub y_res: f64,
+}
+
+impl From<[f64; 6]> for GeoTransform {
+    fn from(value: [f64; 6]) -> Self {
+        GeoTransform {
+            x_off: value[0],
+            x_res: value[1],
+            x_rot: value[2],
+            y_off: value[3],
+            y_rot: value[4],
+            y_res: value[5],
+        }
+    }
+}
+
+impl Default for GeoTransform {
+    fn default() -> Self {
+        GeoTransform {
+            x_off: 0.0,
+            x_res: 1.0,
+            x_rot: 0.0,
+            y_off: 0.0,
+            y_rot: 0.0,
+            y_res: 1.0,
         }
     }
 }

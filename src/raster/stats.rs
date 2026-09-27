@@ -71,9 +71,10 @@ impl RasterHandler {
     /// If the band isn't loaded and isn't already loading, kick off a
     /// background thread to compute stats + histogram for it.
     pub(crate) fn ensure_stats_loaded(&self, band: usize) {
+        let band_index = band - 1;
         {
             let cache = self.bands_stats.lock().unwrap();
-            match cache.get(band - 1) {
+            match cache.get(band_index) {
                 Some(BandStatStatus::NotLoaded) => {}
                 _ => return, // already loading / loaded / failed / out of range
             }
@@ -81,9 +82,9 @@ impl RasterHandler {
 
         {
             let mut cache = self.bands_stats.lock().unwrap();
-            match cache.get_mut(band - 1) {
+            match cache.get_mut(band_index) {
                 Some(slot @ BandStatStatus::NotLoaded) => *slot = BandStatStatus::Loading,
-                _ => return, // someone else beat us to it
+                _ => return,
             }
         }
 

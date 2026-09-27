@@ -2,7 +2,9 @@ use anyhow::Result;
 use egui_phosphor as icon;
 use std::path::{Path, PathBuf};
 
+use crate::panels::vrt_form::VrtFormBuffer;
 use crate::panels::{LeftPanel, RightPanel};
+use crate::raster::xml_vrt::VrtParameters;
 use crate::viewers::Viewer;
 
 /// The structure containing the whole rview app
@@ -26,6 +28,9 @@ pub(crate) struct RasterView {
 #[derive(Default)]
 pub(crate) struct AppState {
     pub(crate) pyramid_promise: Option<poll_promise::Promise<Result<()>>>,
+    pub(crate) show_vrt_form: bool,
+    pub(crate) vrt_params: VrtParameters,
+    pub(crate) vrt_form: VrtFormBuffer,
 }
 
 impl std::fmt::Debug for AppState {
@@ -66,15 +71,20 @@ impl RasterView {
                 return Ok(());
             } else {
                 tracing::info!("Asking update path > change loaded file");
-                self.viewer = Some(Viewer::with_raster(new_path, ctx)?);
             }
         } else {
             // First raster to initialize
             tracing::info!("Asking update path > first loading file");
-            self.viewer = Some(Viewer::with_raster(new_path, ctx)?);
         }
 
-        self.raster_path = Some(new_path.into());
+        let viewer = Viewer::with_raster(new_path, ctx.clone());
+        if let Err(_) = viewer {
+            self.app_state.show_vrt_form = true;
+            self.app_state.vrt_form.path_buf = new_path.to_string_lossy().into_owned();
+        } else if let Ok(view) = viewer {
+            self.viewer = Some(view);
+            self.raster_path = Some(new_path.into());
+        }
         Ok(())
     }
 
@@ -93,6 +103,9 @@ impl RasterView {
 
 impl eframe::App for RasterView {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        // Vrt form
+        self.ui_vrt_form(ui.ctx());
+
         // Drag n Drop
         ui.ctx().input(|i| {
             if let Some(dropped) = i.raw.dropped_files.first() {
