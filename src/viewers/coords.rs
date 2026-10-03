@@ -231,6 +231,7 @@ pub(crate) struct GeoBox {
 }
 
 impl GeoBox {
+    /// Swap min max if invers, None if min = max (collapse)
     fn new(xmin: f64, xmax: f64, ymin: f64, ymax: f64) -> Option<Self> {
         if xmin == xmax || ymin == ymax {
             return None;

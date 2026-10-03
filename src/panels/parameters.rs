@@ -29,6 +29,7 @@ impl RasterView {
 
                 ui.checkbox(&mut view.parameters.show_tile_bounds, "Show tile");
                 ui.horizontal(|ui| {
+                    // TODO ask cache size in MB and convert in byte internaly
                     ui.label("Cache size");
                     ui.add(
                         egui::DragValue::new(&mut view.parameters.cache_size)
@@ -36,6 +37,7 @@ impl RasterView {
                             .speed(64),
                     );
                 });
+                // Need to format and activate the parameters
                 egui::ComboBox::from_label("Resampling")
                     .selected_text(match view.parameters.resampling {
                         ViewerResampling::Nearest => "Nearest",
@@ -53,6 +55,10 @@ impl RasterView {
                             "Bilinear",
                         );
                     });
+                ui.checkbox(
+                    &mut view.parameters.auto_load_band_stats,
+                    "Autoload band statistics",
+                );
             });
         }
     }

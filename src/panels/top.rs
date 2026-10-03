@@ -99,6 +99,15 @@ impl RasterView {
                     {
                         let _ = self.update_path_force(path.as_path(), ui.ctx().clone());
                     }
+
+                    if ui
+                        .button("Unload")
+                        .on_hover_text("Unload current raster")
+                        .clicked()
+                    {
+                        self.raster_path = None;
+                        self.viewer = None;
+                    }
                 });
 
                 // Loading spin

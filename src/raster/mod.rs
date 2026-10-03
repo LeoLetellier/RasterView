@@ -15,7 +15,6 @@ use crate::{
 
 pub(crate) mod loading;
 pub(crate) mod stats;
-pub(crate) mod ui;
 pub(crate) mod xml_vrt;
 
 #[derive(Debug)]
@@ -43,6 +42,14 @@ impl RasterHandler {
 
     pub(crate) fn _raster_path(&self) -> &String {
         &self.path
+    }
+
+    pub fn is_single_band(&self) -> bool {
+        self.raster_count() == 1
+    }
+
+    pub(crate) fn metadata(&self) -> &RasterMetadata {
+        &self.raster_metadata
     }
 
     pub(crate) fn as_owned_dataset(&self) -> Result<Dataset> {
@@ -101,6 +108,10 @@ impl RasterHandler {
         self.on_screen_texture_retainer = Default::default();
     }
 
+    pub(crate) fn update_cache_size(&mut self, capacity: u64) {
+        self.texture_cache.set_capacity(capacity);
+    }
+
     pub(crate) fn band_is_complex(&self, _band: usize) -> bool {
         false // TODO
     }
@@ -150,28 +161,31 @@ impl RasterHandler {
                 return false;
             }
         }
-
         true
     }
 }
 
 #[derive(Debug)]
 pub(crate) struct RasterMetadata {
-    driver: String,
-    _description: String,
-    size: (usize, usize),
-    band_nb: usize,
-    projection: String,
-    geotransform: Option<GeoTransform>,
-    bbox: Option<GeoBox>,
-    bands: Vec<BandMetadata>,
+    pub driver: String,
+    pub description: String,
+    pub size: (usize, usize),
+    pub band_nb: usize,
+    pub projection: String,
+    pub geotransform: GeoTransform,
+    pub bbox: Option<GeoBox>,
+    pub bands: Vec<BandMetadata>,
 }
 
 impl RasterMetadata {
     pub(crate) fn try_from_dataset(dataset: &Dataset) -> Result<Self> {
         let size = dataset.raster_size();
-        let geotransform = dataset.geo_transform().ok().map(GeoTransform::from);
-        let bbox = geotransform.as_ref().and_then(|gt| gt.as_geobox(size));
+        let geotransform = dataset
+            .geo_transform()
+            .ok()
+            .map(GeoTransform::from)
+            .unwrap_or_default();
+        let bbox = geotransform.as_geobox(size);
 
         let bands = dataset
             .rasterbands()
@@ -184,7 +198,7 @@ impl RasterMetadata {
 
         Ok(RasterMetadata {
             driver: dataset.driver().short_name(),
-            _description: dataset.description()?,
+            description: dataset.description()?,
             size,
             band_nb: dataset.raster_count(),
             projection: dataset.projection(),
@@ -197,34 +211,37 @@ impl RasterMetadata {
 
 #[derive(Debug)]
 pub(crate) struct BandMetadata {
-    _band_id: usize,
-    _description: String,
-    dtype: String,
-    unit: String,
-    _overview_nb: usize,
-    ndv: Option<f64>,
-    scale: Option<f64>,
-    offset: Option<f64>,
-    overviews: Vec<[usize; 3]>,
+    pub description: String,
+    pub dtype: String,
+    pub unit: String,
+    pub ndv: Option<f64>,
+    pub scale: Option<f64>,
+    pub offset: Option<f64>,
+    pub overviews: Vec<[usize; 3]>,
 }
 
 impl BandMetadata {
-    fn from_band(_band_id: usize, band: &RasterBand) -> Self {
-        let _overview_nb = band.overview_count().unwrap_or(0) as usize;
+    fn from_band(band_id: usize, band: &RasterBand) -> Self {
+        let overview_nb = band.overview_count().unwrap_or(0) as usize;
         let mut overviews = vec![];
-        for k in 0.._overview_nb {
+        for k in 0..overview_nb {
             if let Ok(o) = band.overview(k) {
                 let s = o.size();
                 overviews.push([k, s.0, s.1]);
             }
         }
+        let description = band.description().unwrap_or_default();
+
+        tracing::info!(
+            "Loaded band metadata {} with description '{}'",
+            band_id,
+            description
+        );
 
         BandMetadata {
-            _band_id,
-            _description: band.description().unwrap_or_default(),
+            description,
             dtype: band.band_type().name(),
             unit: band.unit(),
-            _overview_nb,
             ndv: band.no_data_value(),
             scale: band.scale(),
             offset: band.offset(),

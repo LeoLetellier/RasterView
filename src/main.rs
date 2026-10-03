@@ -16,12 +16,12 @@ fn main() -> eframe::Result {
         if SHOW_ALL_TRACING {
             "debug"
         } else {
-            "raster_view=debug,warn"
+            "rview=debug,warn"
         }
     } else if SHOW_ALL_TRACING {
         "info"
     } else {
-        "raster_view=info,warn"
+        "rview=info,warn"
     };
 
     let filter = tracing_subscriber::EnvFilter::try_from_default_env()

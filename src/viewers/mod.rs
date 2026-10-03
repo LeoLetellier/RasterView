@@ -90,7 +90,7 @@ pub(crate) struct BgLoading {
 
 impl BgLoading {
     pub(crate) fn any_loading(&self) -> bool {
-        self.loading_stat & self.loading_tile
+        self.loading_stat || self.loading_tile
     }
 }
 

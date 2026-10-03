@@ -46,11 +46,6 @@ impl RasterView {
     ///
     /// Need the egui context to register custom icons from phosphoricons
     pub(crate) fn new(ctx: egui::Context) -> Self {
-        let mut fonts = egui::FontDefinitions::default();
-        icon::add_to_fonts(&mut fonts, icon::Variant::Regular);
-        icon::add_to_fonts(&mut fonts, icon::Variant::Fill);
-        ctx.set_fonts(fonts);
-
         Self {
             raster_path: Default::default(),
             viewer: Default::default(),
@@ -105,6 +100,29 @@ impl eframe::App for RasterView {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         // Vrt form
         self.ui_vrt_form(ui.ctx());
+
+        #[cfg(debug_assertions)]
+        // Show style panel on debug
+        {
+            ui.ctx().show_viewport_immediate(
+                egui::ViewportId::from_hash_of("style_editor"),
+                egui::ViewportBuilder::default()
+                    .with_title("Style editor")
+                    .with_inner_size([420.0, 720.0]),
+                |ui, class| {
+                    // Fallback if the backend can't open real windows
+                    if class == egui::ViewportClass::EmbeddedWindow {
+                        // draw an egui::Window here instead if you care
+                    }
+
+                    egui::CentralPanel::default().show(ui, |ui| {
+                        egui::ScrollArea::vertical().show(ui, |ui| {
+                            ui.ctx().clone().style_ui(ui, egui::Theme::Dark);
+                        });
+                    });
+                },
+            );
+        }
 
         // Drag n Drop
         ui.ctx().input(|i| {
@@ -203,11 +221,19 @@ pub(crate) fn setup_custom_fonts(ctx: &egui::Context) {
         egui::FontData::from_static(include_bytes!("../resources/fonts/Geist-Regular.ttf")).into(),
     );
 
+    fonts.font_data.insert(
+        "InterVariable".to_owned(),
+        egui::FontData::from_static(include_bytes!("../resources/fonts/Inter-Variable.ttf")).into(),
+    );
+
     fonts
         .families
         .entry(egui::FontFamily::Proportional)
         .or_default()
-        .insert(0, "GeistRegular".to_owned());
+        .insert(0, "InterVariable".to_owned());
+
+    icon::add_to_fonts(&mut fonts, icon::Variant::Regular);
+    icon::add_to_fonts(&mut fonts, icon::Variant::Fill);
 
     ctx.set_fonts(fonts);
 

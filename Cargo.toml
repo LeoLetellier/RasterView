@@ -40,6 +40,10 @@ gdal = { version = "0.19", features = ["bindgen"] }
 # Fetch precompiled bindings
 gdal = { version = "0.19" }
 
+[[bin]]
+name = "rview"
+path = "src/main.rs"
+
 [profile.release]
 opt-level = 3 # default
 lto = "fat" # link time optimizations
