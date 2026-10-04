@@ -1,7 +1,6 @@
 use anyhow::Result;
 use egui_phosphor as icon;
 use std::path::{Path, PathBuf};
-use tracing_subscriber::reload::Handle;
 
 use crate::panels::parameters::{Settings, SettingsPanel};
 use crate::panels::vrt_form::VrtFormBuffer;
@@ -12,6 +11,8 @@ use crate::viewers::Viewer;
 use tracing_subscriber::{EnvFilter, Registry, prelude::*, reload};
 
 type TracingHandle = reload::Handle<EnvFilter, Registry>;
+
+const SETTINGS_KEY: &str = "settings";
 
 /// The structure containing the whole rview app
 ///
@@ -94,7 +95,16 @@ impl RasterView {
     /// Create the app structure
     ///
     /// Need the egui context to register custom icons from phosphoricons
-    pub(crate) fn new(_ctx: egui::Context) -> Self {
+    pub(crate) fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        let ctx = cc.egui_ctx.clone();
+
+        let mut app_state = AppState::default();
+        if let Some(storage) = cc.storage {
+            if let Some(settings) = eframe::get_value::<Settings>(storage, SETTINGS_KEY) {
+                app_state.settings = settings;
+            }
+        }
+
         Self {
             raster_path: Default::default(),
             viewer: Default::default(),
@@ -102,7 +112,7 @@ impl RasterView {
             left_panel: LeftPanel::Metadata,
             right_panel_open: true,
             right_panel: RightPanel::Palette,
-            app_state: AppState::default(),
+            app_state,
         }
     }
 
@@ -146,13 +156,15 @@ impl RasterView {
 }
 
 impl eframe::App for RasterView {
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        eframe::set_value(storage, SETTINGS_KEY, &self.app_state.settings);
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         // Vrt form
         self.ui_vrt_form(ui.ctx());
 
-        #[cfg(debug_assertions)]
-        // Show style panel on debug
-        {
+        if self.app_state.settings.show_theme_panel {
             ui.ctx().show_viewport_immediate(
                 egui::ViewportId::from_hash_of("style_editor"),
                 egui::ViewportBuilder::default()

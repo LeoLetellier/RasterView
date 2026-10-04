@@ -38,7 +38,7 @@ fn main() -> eframe::Result {
         native_options,
         Box::new(|cc| {
             crate::app::setup_custom_fonts(&cc.egui_ctx);
-            Ok(Box::new(app::RasterView::new(cc.egui_ctx.clone())))
+            Ok(Box::new(app::RasterView::new(cc)))
         }),
     )
 }

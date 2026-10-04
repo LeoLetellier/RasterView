@@ -36,8 +36,10 @@ impl Viewer {
         let raster_size = self.raster_handler.raster_size();
         // Avoid weird default plot position
         let plot_bound = raster_size.0.max(raster_size.1) as f64;
+        // Avoid crash viewport padding <= 0.5 (min max crossed)
+        let vpad = settings.viewport_padding.max(0.6);
         let plot = Plot::new("main_plot")
-            .default_x_bounds(-0.1 * plot_bound, 1.1 * plot_bound)
+            .default_x_bounds(-(vpad - 1.0) * plot_bound, vpad * plot_bound)
             .data_aspect(1.0)
             .pan_pointer_button(egui::PointerButton::Primary)
             .boxed_zoom_pointer_button(egui::PointerButton::Secondary)

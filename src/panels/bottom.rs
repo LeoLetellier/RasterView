@@ -39,9 +39,11 @@ impl RasterView {
                     );
 
                     if cfg!(debug_assertions) {
-                        let ms = ui.ctx().input(|i| i.unstable_dt * 1000.0);
                         egui::warn_if_debug_build(ui);
-                        ui.label(format!("{ms:.1} ms"));
+                        if self.app_state.settings.show_frame_rate {
+                            let ms = ui.ctx().input(|i| i.unstable_dt * 1000.0);
+                            ui.label(format!("{ms:.1} ms"));
+                        }
                     }
 
                     if let Some(view) = &self.viewer

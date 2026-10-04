@@ -30,19 +30,30 @@ pub(crate) enum Resampling {
 #[serde(default)]
 pub(crate) struct Settings {
     // App
+    /// Search automatically for lect.in or .src headers (NSBAS)
     pub(crate) autoresolve_real4: bool,
+    /// Search automatically for AMSTer headers
     pub(crate) autoresolve_amster: bool,
-    pub(crate) default_colormap: String,
     // Viewer
+    /// Resampling method to display raster
     pub(crate) resampling: Resampling,
-    pub(crate) zoom_speed: f32,
+    /// Tile size on screen in pixels
+    pub(crate) tile_size: usize,
+    /// Ratio between the viewport size and the raster
+    pub(crate) viewport_padding: f64,
     // Cache
+    /// Size of the cache
     pub(crate) cache_mb: u32,
+    /// Preload all band statistics
     pub(crate) preload_stats: bool,
     // Debug
+    /// Show the tile boundaries
     pub(crate) show_tiles: bool,
+    /// Show the theme panel
     pub(crate) show_theme_panel: bool,
+    /// Show the framerate
     pub(crate) show_frame_rate: bool,
+    /// Enable verbose logs
     pub(crate) verbose_logs: bool,
 }
 
@@ -51,12 +62,12 @@ impl Default for Settings {
         let is_debug = cfg!(debug_assertions);
         Self {
             // App
-            autoresolve_real4: true,
-            autoresolve_amster: true,
-            default_colormap: "default".to_string(),
+            autoresolve_real4: false,
+            autoresolve_amster: false,
             // Viewer
             resampling: Resampling::Nearest,
-            zoom_speed: 1.0,
+            tile_size: 256,
+            viewport_padding: 1.1, // 10%
             // Cache
             cache_mb: 512,
             preload_stats: true,
@@ -370,7 +381,7 @@ impl SettingsPanel {
                                 f.row(
                                     ui,
                                     "Auto-resolve REAL4",
-                                    "Resolve REAL4 files automatically.",
+                                    "Resolve REAL4 files automatically (lect.in and .rsc headers).",
                                     &mut s.autoresolve_real4,
                                     &d.autoresolve_real4,
                                     |ui, v| toggle(ui, v),
@@ -378,18 +389,10 @@ impl SettingsPanel {
                                 f.row(
                                     ui,
                                     "Auto-resolve AMSTER",
-                                    "Resolve AMSTER files automatically.",
+                                    "Resolve AMSTER files automatically (AMSTer Engine TextFile headers).",
                                     &mut s.autoresolve_amster,
                                     &d.autoresolve_amster,
                                     |ui, v| toggle(ui, v),
-                                );
-                                f.row(
-                                    ui,
-                                    "Default colormap",
-                                    "Colormap applied when opening a dataset.",
-                                    &mut s.default_colormap,
-                                    &d.default_colormap,
-                                    |ui, v| ui.add(TextEdit::singleline(v).desired_width(140.0)),
                                 );
                             });
 
@@ -407,19 +410,17 @@ impl SettingsPanel {
                                             v,
                                             &[
                                                 (Resampling::Nearest, "Nearest"),
-                                                // add the other variants here
+                                                (Resampling::Bilinear, "Bilinear"),
                                             ],
                                         )
                                     },
                                 );
-                                f.row(
-                                    ui,
-                                    "Zoom speed",
-                                    "",
-                                    &mut s.zoom_speed,
-                                    &d.zoom_speed,
-                                    |ui, v| ui.add(Slider::new(v, 0.1..=5.0)),
-                                );
+                                f.row(ui, "Tile size", "Tile size on screen.", &mut s.tile_size, &d.tile_size, |ui, v| {
+                                    ui.add(DragValue::new(v).range(64..=2048).suffix(" pixels"))
+                                });
+                                f.row(ui, "Viewport padding", "Ratio between the viewport size and the raster at default zoom level.", &mut s.viewport_padding, &d.viewport_padding, |ui, v| {
+                                    ui.add(DragValue::new(v).range(1.0..=3.0).speed(0.1))
+                                });
                             });
 
                             form.section(ui, Section::Cache, |f, ui| {

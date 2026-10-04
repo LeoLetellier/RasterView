@@ -40,7 +40,7 @@ impl Deref for RasterHandler {
 impl RasterHandler {
     const CACHE_EXPECTED_MAXIMUM_ELEMENTS: usize = 500;
 
-    pub(crate) fn _raster_path(&self) -> &String {
+    pub(crate) fn raster_path(&self) -> &String {
         &self.path
     }
 
