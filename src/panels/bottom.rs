@@ -1,6 +1,7 @@
 use super::{LeftPanel, RightPanel, panel_button};
 use crate::RasterView;
-use egui::Ui;
+use crate::icon;
+use egui::{Color32, RichText, Ui};
 
 impl RasterView {
     pub(crate) fn ui_bottom_panel(&mut self, ui: &mut Ui) {
@@ -20,13 +21,15 @@ impl RasterView {
                 ui.horizontal_centered(|_| {});
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    panel_button(
-                        &mut self.right_panel_open,
-                        &mut self.right_panel,
-                        RightPanel::Parameters,
-                        ui,
-                        "Toggle parameters panel",
-                    );
+                    let is_param_open = self.ui_parameters(ui);
+                    let param_icon = if is_param_open {
+                        RichText::new(icon::fill::GEAR).color(Color32::from_rgb(30, 144, 255))
+                    } else {
+                        RichText::new(icon::regular::GEAR)
+                    };
+                    if ui.button(param_icon).on_hover_text("Pamareters").clicked() {
+                        self.app_state.settings_panel.is_open = true;
+                    };
                     panel_button(
                         &mut self.right_panel_open,
                         &mut self.right_panel,

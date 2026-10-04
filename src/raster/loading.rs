@@ -131,7 +131,7 @@ fn compute_levels(dataset: &Dataset, min_size: usize) -> Vec<i32> {
 /// Build a pyramid (overviews) automatically sized from the raster's
 /// dimensions, stopping once the smallest overview level would be
 /// below `min_size` pixels on its shortest side.
-pub fn build_pyramid(
+pub(crate) fn build_pyramid(
     dataset: &mut Dataset,
     resample_alg: &str,
     min_size: usize,
@@ -144,7 +144,7 @@ pub fn build_pyramid(
 }
 
 /// Build a pyramid with explicit levels, e.g. &[2, 4, 8, 16].
-pub fn _build_pyramid_with_levels(
+pub(crate) fn _build_pyramid_with_levels(
     dataset: &mut Dataset,
     resample_alg: &str,
     levels: &[i32],

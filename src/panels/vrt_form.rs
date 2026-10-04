@@ -8,14 +8,14 @@ use crate::{
 };
 
 #[derive(Default)]
-pub struct VrtFormBuffer {
-    pub path_buf: String,
-    pub has_ndv: bool,
-    pub ndv_buf: f64,
-    pub has_crs: bool,
-    pub crs_buf: String,
-    pub has_geotransform: bool,
-    pub geotransform_buf: GeoTransform,
+pub(crate) struct VrtFormBuffer {
+    pub(crate) path_buf: String,
+    pub(crate) has_ndv: bool,
+    pub(crate) ndv_buf: f64,
+    pub(crate) has_crs: bool,
+    pub(crate) crs_buf: String,
+    pub(crate) has_geotransform: bool,
+    pub(crate) geotransform_buf: GeoTransform,
 }
 
 impl RasterView {

@@ -44,7 +44,7 @@ impl RasterHandler {
         &self.path
     }
 
-    pub fn is_single_band(&self) -> bool {
+    pub(crate) fn is_single_band(&self) -> bool {
         self.raster_count() == 1
     }
 
@@ -167,14 +167,14 @@ impl RasterHandler {
 
 #[derive(Debug)]
 pub(crate) struct RasterMetadata {
-    pub driver: String,
-    pub description: String,
-    pub size: (usize, usize),
-    pub band_nb: usize,
-    pub projection: String,
-    pub geotransform: GeoTransform,
-    pub bbox: Option<GeoBox>,
-    pub bands: Vec<BandMetadata>,
+    pub(crate) driver: String,
+    pub(crate) description: String,
+    pub(crate) size: (usize, usize),
+    pub(crate) band_nb: usize,
+    pub(crate) projection: String,
+    pub(crate) geotransform: GeoTransform,
+    pub(crate) bbox: Option<GeoBox>,
+    pub(crate) bands: Vec<BandMetadata>,
 }
 
 impl RasterMetadata {
@@ -211,13 +211,13 @@ impl RasterMetadata {
 
 #[derive(Debug)]
 pub(crate) struct BandMetadata {
-    pub description: String,
-    pub dtype: String,
-    pub unit: String,
-    pub ndv: Option<f64>,
-    pub scale: Option<f64>,
-    pub offset: Option<f64>,
-    pub overviews: Vec<[usize; 3]>,
+    pub(crate) description: String,
+    pub(crate) dtype: String,
+    pub(crate) unit: String,
+    pub(crate) ndv: Option<f64>,
+    pub(crate) scale: Option<f64>,
+    pub(crate) offset: Option<f64>,
+    pub(crate) overviews: Vec<[usize; 3]>,
 }
 
 impl BandMetadata {
@@ -254,19 +254,19 @@ impl BandMetadata {
 ///
 /// [GDAL documentation](https://gdal.org/en/stable/tutorials/geotransforms_tut.html)
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct GeoTransform {
+pub(crate) struct GeoTransform {
     /// x-coordinate of the upper-left corner of the upper-left pixel
-    pub x_off: f64,
+    pub(crate) x_off: f64,
     /// w-e pixel resolution / pixel width
-    pub x_res: f64,
+    pub(crate) x_res: f64,
     /// row rotation (typically zero)
-    pub x_rot: f64,
+    pub(crate) x_rot: f64,
     /// y-coordinate of the upper-left corner of the upper-left pixel
-    pub y_off: f64,
+    pub(crate) y_off: f64,
     /// column rotation (typically zero)
-    pub y_rot: f64,
+    pub(crate) y_rot: f64,
     /// n-s pixel resolution / pixel height (negative value for a north-up image)
-    pub y_res: f64,
+    pub(crate) y_res: f64,
 }
 
 impl From<[f64; 6]> for GeoTransform {

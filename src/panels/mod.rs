@@ -47,14 +47,12 @@ impl RasterView {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub(crate) enum RightPanel {
     Palette,
-    Parameters,
 }
 
 impl Panel for RightPanel {
     fn symbol(&self) -> RichText {
         match &self {
             RightPanel::Palette => RichText::new(icon::regular::PAINT_BRUSH_HOUSEHOLD),
-            RightPanel::Parameters => RichText::new(icon::regular::GEAR),
         }
     }
 
@@ -62,9 +60,6 @@ impl Panel for RightPanel {
         match &self {
             RightPanel::Palette => RichText::new(icon::fill::PAINT_BRUSH_HOUSEHOLD)
                 .color(Color32::from_rgb(30, 144, 255)),
-            RightPanel::Parameters => {
-                RichText::new(icon::fill::GEAR).color(Color32::from_rgb(30, 144, 255))
-            }
         }
     }
 }
@@ -73,7 +68,6 @@ impl RasterView {
     pub(crate) fn ui_right_panel(&mut self, ui: &mut Ui) {
         match &self.right_panel {
             RightPanel::Palette => self.ui_palette_panel(ui),
-            RightPanel::Parameters => self.ui_parameters_panel(ui),
         }
     }
 }

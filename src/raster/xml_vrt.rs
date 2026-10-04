@@ -8,22 +8,22 @@ use crate::raster::GeoTransform;
 use gdal::config::set_config_option;
 
 #[derive(Debug, Default, PartialEq)]
-pub struct VrtParameters {
-    pub array_path: PathBuf,
-    pub size: (usize, usize),
-    pub band_nb: usize,
-    pub image_offset: usize,
-    pub pixel_offset: usize,
-    pub interleave: VrtInterleave,
-    pub byte_order: VrtByteOrder,
-    pub data_type: VrtDataType,
-    pub ndv: Option<f64>,
-    pub crs: Option<String>,
-    pub geotransform: Option<GeoTransform>,
+pub(crate) struct VrtParameters {
+    pub(crate) array_path: PathBuf,
+    pub(crate) size: (usize, usize),
+    pub(crate) band_nb: usize,
+    pub(crate) image_offset: usize,
+    pub(crate) pixel_offset: usize,
+    pub(crate) interleave: VrtInterleave,
+    pub(crate) byte_order: VrtByteOrder,
+    pub(crate) data_type: VrtDataType,
+    pub(crate) ndv: Option<f64>,
+    pub(crate) crs: Option<String>,
+    pub(crate) geotransform: Option<GeoTransform>,
 }
 
 #[derive(Debug, Default, PartialEq)]
-pub enum VrtInterleave {
+pub(crate) enum VrtInterleave {
     #[default]
     Bsq,
     Bip,
@@ -31,14 +31,14 @@ pub enum VrtInterleave {
 }
 
 #[derive(Debug, Default, PartialEq)]
-pub enum VrtByteOrder {
+pub(crate) enum VrtByteOrder {
     #[default]
     Lsb,
     Msb,
 }
 
 impl VrtByteOrder {
-    pub fn as_gdal_str(&self) -> &'static str {
+    pub(crate) fn as_gdal_str(&self) -> &'static str {
         match self {
             VrtByteOrder::Lsb => "LSB",
             VrtByteOrder::Msb => "MSB",
@@ -47,7 +47,7 @@ impl VrtByteOrder {
 }
 
 #[derive(Debug, Default, PartialEq)]
-pub enum VrtDataType {
+pub(crate) enum VrtDataType {
     Byte,
     UInt16,
     Int16,
@@ -69,7 +69,7 @@ impl VrtDataType {
         }
     }
 
-    pub fn as_gdal_str(&self) -> &'static str {
+    pub(crate) fn as_gdal_str(&self) -> &'static str {
         match self {
             VrtDataType::Byte => "Byte",
             VrtDataType::UInt16 => "UInt16",
@@ -169,7 +169,7 @@ static VRT_COUNTER: AtomicU64 = AtomicU64::new(0);
 /// a `PathBuf` (e.g. `/vsimem/raw_view_3.vrt`) that behaves like any normal
 /// path to `Dataset::open` — so existing code that takes a path can consume
 /// a headerless raw array without modification.
-pub fn simulate_vrt_path(p: &VrtParameters) -> Result<PathBuf> {
+pub(crate) fn simulate_vrt_path(p: &VrtParameters) -> Result<PathBuf> {
     let xml = build_vrt_xml(p);
     let id = VRT_COUNTER.fetch_add(1, Ordering::Relaxed);
     let vsi_path = PathBuf::from(format!("/vsimem/raw_view_{id}.vrt"));
@@ -180,7 +180,7 @@ pub fn simulate_vrt_path(p: &VrtParameters) -> Result<PathBuf> {
 
 /// Temporarily allows GDAL's VRTRawRasterBand to dereference sources inside
 /// `dir`. Restriction is lifted automatically when the returned guard drops.
-pub fn allow_raw_source(dir: &Path) -> Result<()> {
+pub(crate) fn allow_raw_source(dir: &Path) -> Result<()> {
     set_config_option(
         "GDAL_VRT_RAWRASTERBAND_ALLOWED_SOURCE",
         &dir.to_string_lossy(),

@@ -1,13 +1,13 @@
 use std::ops::RangeInclusive;
 
-use crate::viewers::Viewer;
 use crate::viewers::coords::Bbox;
 use crate::viewers::tiler::TileDescriptor;
+use crate::{panels::parameters::Settings, viewers::Viewer};
 use egui::Ui;
 use egui_plot::{GridInput, GridMark, Plot, PlotBounds, PlotPoint, PlotPoints, PlotUi, Polygon};
 
 impl Viewer {
-    pub(crate) fn ui(&mut self, ui: &mut Ui) {
+    pub(crate) fn ui(&mut self, ui: &mut Ui, settings: &Settings) {
         if cfg!(debug_assertions) {
             let context_count = ui.ctx().tex_manager().read().allocated().count();
             tracing::trace!("Context count: {}", context_count);
@@ -73,7 +73,7 @@ impl Viewer {
             if let Some(ot) = tiles {
                 ot.iter().for_each(|t| t.plot_ui(plot_ui))
             }
-            if self.parameters.show_tile_bounds
+            if settings.show_tiles
                 && let Some(tiles) = tiles_needed
             {
                 tiles.iter().for_each(|t| t.ui_tile_bounds(plot_ui));

@@ -1,11 +1,17 @@
 use anyhow::Result;
 use egui_phosphor as icon;
 use std::path::{Path, PathBuf};
+use tracing_subscriber::reload::Handle;
 
+use crate::panels::parameters::{Settings, SettingsPanel};
 use crate::panels::vrt_form::VrtFormBuffer;
 use crate::panels::{LeftPanel, RightPanel};
 use crate::raster::xml_vrt::VrtParameters;
 use crate::viewers::Viewer;
+
+use tracing_subscriber::{EnvFilter, Registry, prelude::*, reload};
+
+type TracingHandle = reload::Handle<EnvFilter, Registry>;
 
 /// The structure containing the whole rview app
 ///
@@ -25,12 +31,55 @@ pub(crate) struct RasterView {
     pub(crate) app_state: AppState,
 }
 
-#[derive(Default)]
 pub(crate) struct AppState {
     pub(crate) pyramid_promise: Option<poll_promise::Promise<Result<()>>>,
     pub(crate) show_vrt_form: bool,
     pub(crate) vrt_params: VrtParameters,
     pub(crate) vrt_form: VrtFormBuffer,
+    pub(crate) settings: Settings,
+    pub(crate) settings_panel: SettingsPanel,
+    pub(crate) tracing_handle: TracingHandle,
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        let tracing_handle = init_logging(false); // hardcoded
+        Self {
+            pyramid_promise: Default::default(),
+            show_vrt_form: Default::default(),
+            vrt_params: Default::default(),
+            vrt_form: Default::default(),
+            settings: Default::default(),
+            settings_panel: Default::default(),
+            tracing_handle,
+        }
+    }
+}
+
+// Handle for tracing logging
+
+fn build_filter(verbose: bool) -> EnvFilter {
+    EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        EnvFilter::new(if verbose {
+            "rview=debug,warn"
+        } else {
+            "rview=info,warn"
+        })
+    })
+}
+
+fn init_logging(verbose: bool) -> TracingHandle {
+    let (filter, handle) = reload::Layer::new(build_filter(verbose));
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+    handle
+}
+
+fn apply_log_level(handle: &TracingHandle, verbose: bool) {
+    let f = if verbose { "debug" } else { "info" };
+    let _ = handle.reload(build_filter(verbose));
 }
 
 impl std::fmt::Debug for AppState {
@@ -45,7 +94,7 @@ impl RasterView {
     /// Create the app structure
     ///
     /// Need the egui context to register custom icons from phosphoricons
-    pub(crate) fn new(ctx: egui::Context) -> Self {
+    pub(crate) fn new(_ctx: egui::Context) -> Self {
         Self {
             raster_path: Default::default(),
             viewer: Default::default(),
@@ -167,7 +216,7 @@ impl eframe::App for RasterView {
             // Lastly show the view at the center
             egui::CentralPanel::default().show(ui, |ui| {
                 if let Some(view) = &mut self.viewer {
-                    view.ui(ui);
+                    view.ui(ui, &self.app_state.settings);
                 }
             });
         } else {

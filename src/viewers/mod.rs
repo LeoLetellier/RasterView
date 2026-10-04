@@ -28,6 +28,7 @@ pub(crate) struct Viewer {
 }
 
 #[derive(Debug, Clone)]
+/// Will be deprecated in favor of global app settings
 pub(crate) struct ViewerParams {
     /// Size in pixels of the tiles
     ///
