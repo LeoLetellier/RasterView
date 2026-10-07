@@ -1,6 +1,8 @@
-use super::{LeftPanel, RightPanel, panel_button};
+use super::{LeftPanel, panel_button};
 use crate::RasterView;
 use crate::icon;
+use crate::widgets::buttons::IconButton;
+use crate::widgets::buttons::Side;
 use egui::{Color32, RichText, Ui};
 
 impl RasterView {
@@ -9,6 +11,23 @@ impl RasterView {
             .num_columns(3)
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
+                    let is_param_open = self.ui_parameters(ui);
+                    let response = ui
+                        .add(
+                            IconButton::new(icon::regular::GEAR, is_param_open)
+                                .fill(icon::fill::GEAR)
+                                .size(24.0)
+                                .side(Side::Bottom)
+                                .accent(Color32::from_rgb(30, 144, 255)),
+                        )
+                        .on_hover_text("Parameters");
+
+                    if response.clicked() {
+                        self.app_state.settings_panel.is_open = true;
+                    }
+
+                    ui.separator();
+
                     panel_button(
                         &mut self.left_panel_open,
                         &mut self.left_panel,
@@ -16,28 +35,18 @@ impl RasterView {
                         ui,
                         "Toggle metadata panel",
                     );
+                    panel_button(
+                        &mut self.left_panel_open,
+                        &mut self.left_panel,
+                        LeftPanel::Palette,
+                        ui,
+                        "Toggle palette panel",
+                    );
                 });
 
                 ui.horizontal_centered(|_| {});
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let is_param_open = self.ui_parameters(ui);
-                    let param_icon = if is_param_open {
-                        RichText::new(icon::fill::GEAR).color(Color32::from_rgb(30, 144, 255))
-                    } else {
-                        RichText::new(icon::regular::GEAR)
-                    };
-                    if ui.button(param_icon).on_hover_text("Pamareters").clicked() {
-                        self.app_state.settings_panel.is_open = true;
-                    };
-                    panel_button(
-                        &mut self.right_panel_open,
-                        &mut self.right_panel,
-                        RightPanel::Palette,
-                        ui,
-                        "Toggle palette panel",
-                    );
-
                     if cfg!(debug_assertions) {
                         egui::warn_if_debug_build(ui);
                         if self.app_state.settings.show_frame_rate {

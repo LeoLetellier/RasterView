@@ -2,11 +2,12 @@ use anyhow::Result;
 use egui_phosphor as icon;
 use std::path::{Path, PathBuf};
 
+use crate::panels::LeftPanel;
 use crate::panels::parameters::{Settings, SettingsPanel};
 use crate::panels::vrt_form::VrtFormBuffer;
-use crate::panels::{LeftPanel, RightPanel};
 use crate::raster::xml_vrt::VrtParameters;
 use crate::viewers::Viewer;
+use crate::widgets::install_phosphor;
 
 use tracing_subscriber::{EnvFilter, Registry, prelude::*, reload};
 
@@ -27,8 +28,6 @@ pub(crate) struct RasterView {
     pub(crate) viewer: Option<Viewer>,
     pub(crate) left_panel_open: bool,
     pub(crate) left_panel: LeftPanel,
-    pub(crate) right_panel_open: bool,
-    pub(crate) right_panel: RightPanel,
     pub(crate) app_state: AppState,
 }
 
@@ -108,10 +107,8 @@ impl RasterView {
         Self {
             raster_path: Default::default(),
             viewer: Default::default(),
-            left_panel_open: false,
-            left_panel: LeftPanel::Metadata,
-            right_panel_open: true,
-            right_panel: RightPanel::Palette,
+            left_panel_open: true,
+            left_panel: LeftPanel::Palette,
             app_state,
         }
     }
@@ -208,22 +205,23 @@ impl eframe::App for RasterView {
             // Show left panel is toggled
             let mut is_open = self.left_panel_open;
             egui::Panel::left("left panel")
-                .max_size(ui.ctx().content_rect().width() * 0.33)
+                .min_size(250.0)
+                .max_size(ui.ctx().content_rect().width() * 0.50)
                 .show_collapsible(ui, &mut is_open, |ui| {
                     egui::ScrollArea::both().show(ui, |ui| {
                         self.ui_left_panel(ui);
                     });
                 });
 
-            // Show right panel if toggled
-            let mut is_open = self.right_panel_open;
-            egui::Panel::right("right panel")
-                .max_size(ui.ctx().content_rect().width() * 0.33)
-                .show_collapsible(ui, &mut is_open, |ui| {
-                    egui::ScrollArea::both().show(ui, |ui| {
-                        self.ui_right_panel(ui);
-                    });
-                });
+            // // Show right panel if toggled
+            // let mut is_open = self.right_panel_open;
+            // egui::Panel::right("right panel")
+            //     .max_size(ui.ctx().content_rect().width() * 0.33)
+            //     .show_collapsible(ui, &mut is_open, |ui| {
+            //         egui::ScrollArea::both().show(ui, |ui| {
+            //             self.ui_right_panel(ui);
+            //         });
+            //     });
 
             // Lastly show the view at the center
             egui::CentralPanel::default().show(ui, |ui| {
@@ -255,6 +253,16 @@ impl eframe::App for RasterView {
             );
         }
     }
+}
+
+pub const REGULAR_FAMILY: &str = "phosphor-regular";
+pub const FILL_FAMILY: &str = "phosphor-fill";
+
+pub fn regular_family() -> egui::FontFamily {
+    egui::FontFamily::Name(REGULAR_FAMILY.into())
+}
+pub fn fill_family() -> egui::FontFamily {
+    egui::FontFamily::Name(FILL_FAMILY.into())
 }
 
 /// Change font family and size from egui default
@@ -293,8 +301,8 @@ pub(crate) fn setup_custom_fonts(ctx: &egui::Context) {
         .or_default()
         .insert(0, "InterVariable".to_owned());
 
-    icon::add_to_fonts(&mut fonts, icon::Variant::Regular);
-    icon::add_to_fonts(&mut fonts, icon::Variant::Fill);
+    // Explicitly register the Phosphor icons to avoid colliding with custom font
+    install_phosphor(&mut fonts);
 
     ctx.set_fonts(fonts);
 
