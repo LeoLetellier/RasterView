@@ -1,0 +1,56 @@
+[workspace]
+authors = ["LeoLetellier <leo.letellier.6@gmail.com>"]
+channels = ["conda-forge"]
+name = "raster_view"
+platforms = ["win-64", "linux-64", "osx-arm64"]
+version = "0.1.0"
+
+[feature.dev.dependencies]
+libgdal-core = "==3.12.1"
+libclang = "*"
+pkg-config = "*"
+
+[feature.dev.target.win-64.activation.env]
+GDAL_LIB_DIR = "%CONDA_PREFIX%\\Library\\lib"
+GDAL_INCLUDE_DIR = "%CONDA_PREFIX%\\Library\\include"
+GDAL_VERSION = "3.12.1"
+GDAL_DYNAMIC = "1"
+PKG_CONFIG_PATH = ""
+PROJ_LIB = "%CONDA_PREFIX%\\Library\\share\\proj"
+
+[feature.dev.target.linux-64.activation.env]
+GDAL_LIB_DIR = "$CONDA_PREFIX/lib"
+GDAL_INCLUDE_DIR = "$CONDA_PREFIX/include"
+GDAL_VERSION = "3.12.1"
+GDAL_DYNAMIC = "1"
+PROJ_LIB = "$CONDA_PREFIX/share/proj"
+LD_LIBRARY_PATH = "$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
+
+[feature.dev.target.osx-arm64.activation.env]
+GDAL_LIB_DIR = "$CONDA_PREFIX/lib"
+GDAL_INCLUDE_DIR = "$CONDA_PREFIX/include"
+GDAL_VERSION = "3.12.1"
+GDAL_DYNAMIC = "1"
+PROJ_LIB = "$CONDA_PREFIX/share/proj"
+DYLD_FALLBACK_LIBRARY_PATH = "$CONDA_PREFIX/lib"
+
+[feature.dev.tasks]
+debug-build = "cargo build"
+debug-run = "cargo run"
+release = "cargo build --release"
+
+[feature.static.dependencies]
+cmake = "*"
+ninja = "*"
+
+[feature.static.activation.env]
+# Use Ninja to reduce path length (path length limit for build files on Windows)
+CMAKE_GENERATOR = "Ninja"
+
+[feature.static.tasks]
+release-native = { cmd = "cargo build --features gdal-bundled --profile rnat", env = { RUSTFLAGS = "-C target-cpu=native" } }
+release-static = "cargo build --features gdal-bundled --profile rstat"
+
+[environments]
+default = ["dev"]
+static = { features = ["static"], no-default-feature = true }

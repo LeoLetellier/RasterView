@@ -1,7 +1,5 @@
 use crate::viewers::cmap::{ColorMap, ColorMapType, DbMode};
-use crate::viewers::{
-    ActiveViewer, ColorRanging, CpxMode, NormModeExtent, NormModePanchro, NormModeRGB,
-};
+use crate::viewers::{ActiveViewer, ColorRanging, CpxMode};
 use crate::{RasterView, viewers::Viewer};
 use egui::Ui;
 use ordered_float::OrderedFloat;
@@ -28,16 +26,20 @@ impl RasterView {
         ui.add_space(10.0);
 
         // VIEWMODE
-        ui.columns(2, |cols| {
-            let panchro_selected = view.view_mode.active_viewer == ActiveViewer::Panchro;
+        ui.columns(3, |cols| {
+            let panchro_selected = view.view_mode.active_viewer == ActiveViewer::Band;
             let color_selected = view.view_mode.active_viewer == ActiveViewer::Color;
+            let index_selected = view.view_mode.active_viewer == ActiveViewer::Index;
 
-            if big_mode_button(&mut cols[0], "Panchromatic", panchro_selected) {
-                view.view_mode.active_viewer = ActiveViewer::Panchro;
-            } // drop, square
+            if big_mode_button(&mut cols[0], "Band", panchro_selected) {
+                view.view_mode.active_viewer = ActiveViewer::Band;
+            }
             if big_mode_button(&mut cols[1], "RGB", color_selected) {
                 view.view_mode.active_viewer = ActiveViewer::Color;
-            } // equalizer, stack
+            }
+            if big_mode_button(&mut cols[2], "Index", index_selected) {
+                todo!()
+            }
         });
 
         ui.add_space(14.0);
@@ -46,7 +48,7 @@ impl RasterView {
         section_frame(ui, "Bands", |ui| {
             let band_count = view.raster_handler.raster_count();
             match view.view_mode.active_viewer {
-                ActiveViewer::Panchro => {
+                ActiveViewer::Band => {
                     ui_band_combo(ui, "Band", &mut view.view_mode.panchro_band, band_count);
                 }
                 ActiveViewer::Color => {
@@ -82,11 +84,13 @@ impl RasterView {
                             ui.end_row();
                         });
                 }
+                ActiveViewer::Index => todo!(),
             }
 
             let reference_band = match view.view_mode.active_viewer {
-                ActiveViewer::Panchro => view.view_mode.panchro_band,
+                ActiveViewer::Band => view.view_mode.panchro_band,
                 ActiveViewer::Color => view.view_mode.rgb_bands.0,
+                ActiveViewer::Index => todo!(),
             };
             if view.raster_handler.band_is_complex(reference_band) {
                 ui.add_space(8.0);
@@ -244,66 +248,6 @@ impl RasterView {
                     view.view_mode.color_interpretation.ranging_values =
                         (OrderedFloat(min), OrderedFloat(max));
                 }
-            }
-
-            if matches!(
-                view.view_mode.active_viewer,
-                ActiveViewer::Color | ActiveViewer::Panchro
-            ) {
-                ui.add_space(10.0);
-                ui.separator();
-                ui.add_space(10.0);
-                ui.label(egui::RichText::new("Normalize across").small().weak());
-
-                match view.view_mode.active_viewer {
-                    ActiveViewer::Color => {
-                        ui.horizontal(|ui| {
-                            ui.selectable_value(
-                                &mut view.view_mode.norm_mode_rgb,
-                                NormModeRGB::PerBand,
-                                "Per band",
-                            );
-                            ui.selectable_value(
-                                &mut view.view_mode.norm_mode_rgb,
-                                NormModeRGB::RGBBands,
-                                "RGB bands",
-                            );
-                            ui.selectable_value(
-                                &mut view.view_mode.norm_mode_rgb,
-                                NormModeRGB::AllBands,
-                                "All bands",
-                            );
-                        });
-                    }
-                    ActiveViewer::Panchro => {
-                        ui.horizontal(|ui| {
-                            ui.selectable_value(
-                                &mut view.view_mode.norm_mode_panchro,
-                                NormModePanchro::PerBand,
-                                "Per band",
-                            );
-                            ui.selectable_value(
-                                &mut view.view_mode.norm_mode_panchro,
-                                NormModePanchro::AllBands,
-                                "All bands",
-                            );
-                        });
-                    }
-                }
-                ui.add_space(6.0);
-                ui.label(egui::RichText::new("Normalize over").small().weak());
-                ui.horizontal(|ui| {
-                    ui.selectable_value(
-                        &mut view.view_mode.norm_mode_extent,
-                        NormModeExtent::Raster,
-                        "Full raster",
-                    );
-                    ui.selectable_value(
-                        &mut view.view_mode.norm_mode_extent,
-                        NormModeExtent::CurrentView,
-                        "Current view",
-                    );
-                });
             }
         });
 

@@ -3,7 +3,7 @@ use std::{ops::Deref, sync::Arc};
 use crate::{
     Viewer,
     viewers::{
-        ActiveViewer, ColorRanging, CpxMode, NormModePanchro, NormModeRGB,
+        ActiveViewer, ColorRanging, CpxMode,
         cmap::{ColorInterpretation, DbMode},
         tiler::TileDescriptor,
     },
@@ -155,7 +155,6 @@ impl Viewer {
     fn compute_range_panchro(&self) -> Option<(f32, f32)> {
         let rh = &self.raster_handler;
         let vm = &self.view_mode;
-        let normal_mode = &vm.norm_mode_panchro;
         let manual_range = (
             vm.color_interpretation.ranging_values.0.into_inner(),
             vm.color_interpretation.ranging_values.1.into_inner(),
@@ -189,14 +188,8 @@ impl Viewer {
         // Do the branching — no more silent fallback to manual_range on missing stats
         match vm.ranging_mode {
             ColorRanging::Manual => Some(manual_range),
-            ColorRanging::MinMax => match normal_mode {
-                NormModePanchro::PerBand => band_minmax,
-                NormModePanchro::AllBands => all_minmax,
-            },
-            ColorRanging::Percentile => match normal_mode {
-                NormModePanchro::PerBand => band_percentile,
-                NormModePanchro::AllBands => all_percentile,
-            },
+            ColorRanging::MinMax => band_minmax,
+            ColorRanging::Percentile => band_percentile,
         }
     }
 
@@ -207,7 +200,6 @@ impl Viewer {
     fn compute_range_color(&self) -> Option<((f32, f32), (f32, f32), (f32, f32))> {
         let rh = &self.raster_handler;
         let vm = &self.view_mode;
-        let normal_mode = &vm.norm_mode_rgb;
         let manual_range = (
             vm.color_interpretation.ranging_values.0.into_inner(),
             vm.color_interpretation.ranging_values.1.into_inner(),
@@ -259,39 +251,19 @@ impl Viewer {
         match vm.ranging_mode {
             ColorRanging::Manual => Some((manual_range, manual_range, manual_range)),
 
-            ColorRanging::MinMax => match normal_mode {
-                NormModeRGB::PerBand => {
-                    let r = band_minmax(red)?;
-                    let g = band_minmax(green)?;
-                    let b = band_minmax(blue)?;
-                    Some((r, g, b))
-                }
-                NormModeRGB::RGBBands => {
-                    let combined = combined_minmax(&rgb_bands)?;
-                    Some((combined, combined, combined))
-                }
-                NormModeRGB::AllBands => {
-                    let combined = combined_minmax(&all_bands)?;
-                    Some((combined, combined, combined))
-                }
-            },
+            ColorRanging::MinMax => {
+                let r = band_minmax(red)?;
+                let g = band_minmax(green)?;
+                let b = band_minmax(blue)?;
+                Some((r, g, b))
+            }
 
-            ColorRanging::Percentile => match normal_mode {
-                NormModeRGB::PerBand => {
-                    let r = band_percentile(red)?;
-                    let g = band_percentile(green)?;
-                    let b = band_percentile(blue)?;
-                    Some((r, g, b))
-                }
-                NormModeRGB::RGBBands => {
-                    let combined = combined_percentile(&rgb_bands)?;
-                    Some((combined, combined, combined))
-                }
-                NormModeRGB::AllBands => {
-                    let combined = combined_percentile(&all_bands)?;
-                    Some((combined, combined, combined))
-                }
-            },
+            ColorRanging::Percentile => {
+                let r = band_percentile(red)?;
+                let g = band_percentile(green)?;
+                let b = band_percentile(blue)?;
+                Some((r, g, b))
+            }
         }
     }
 
@@ -299,13 +271,13 @@ impl Viewer {
         let vm = &self.view_mode;
         let rh = &self.raster_handler;
         let view_task = match vm.active_viewer {
-            ActiveViewer::Panchro if rh.band_is_complex(vm.panchro_band) => {
+            ActiveViewer::Band if rh.band_is_complex(vm.panchro_band) => {
                 let range = self.compute_range_panchro_cpx()?;
                 let mut task_ci = vm.color_interpretation.clone();
                 task_ci.with_ranging_values(range);
                 ViewStyle::PanchroCpx(PanchroCpxTask::new(vm.panchro_band, task_ci, vm.cpx_mode))
             }
-            ActiveViewer::Panchro => {
+            ActiveViewer::Band => {
                 let range = self.compute_range_panchro()?;
                 let mut task_ci = vm.color_interpretation.clone();
                 task_ci.with_ranging_values(range);
@@ -319,6 +291,7 @@ impl Viewer {
                     vm.color_interpretation.db_mode,
                 ))
             }
+            ActiveViewer::Index => todo!(),
         };
         Some(view_task)
     }

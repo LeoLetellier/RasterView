@@ -32,14 +32,20 @@ rfd = "0.17.2"
 serde = { version = "1.0.229", features = ["derive"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
-
-[target.'cfg(not(windows))'.dependencies]
-# Generate bindings at compile time (better but need deps - clang)
-gdal = { version = "0.19", features = ["bindgen"] }
-
-[target.'cfg(windows)'.dependencies]
-# Fetch precompiled bindings
 gdal = { version = "0.19" }
+gdal-sys = "0.12.0"
+gdal-src = { version = "0.3.0", optional = true }
+
+[features]
+gdal-bundled = [
+    "gdal-sys/bundled",
+    "dep:gdal-src",
+    "gdal-src/internal_drivers",
+    "gdal-src/driver_sqlite",
+    "gdal-src/driver_gpkg",
+    "gdal-src/driver_netcdf",
+]
+gdal-bindgen = ["gdal/bindgen"]
 
 [profile.release]
 opt-level = 3 # default
@@ -50,3 +56,9 @@ strip = true # remove symbols
 
 # [profile.dev.package."*"]
 # opt-level = 2 # optimize a bit deps on debug
+
+[profile.rnat]
+inherits = "release"
+
+[profile.rstat]
+inherits = "release"

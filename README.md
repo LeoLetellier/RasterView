@@ -40,6 +40,8 @@
 - [ ] Save screenshot of current view (view + colorbar, need own module)
 - [ ] Add index view mode (multi-band raster)
 - [ ] Switch cache call to quadtree to enable coarse filling
+- [ ] Add sqrt, log, gamma, histo eq conversions, dB valid only for positive data
+- [ ] Add symmetric value to cmap, with phase should be -pi;+pi
 
 
 ## ❌ Out of Scope
@@ -51,9 +53,15 @@
 
 ## 🔧 Installation
 
-You need to have a working [GDAL](https://gdal.org/en/stable/) development installation on your system (`libgdal`).
+**NEW**: GDAL dependencies is now handled by pixi, independently from any system installation.
+
+### Rust
 
 This application builds using the Rust compiler. If you don't have rust installed, check the [Rust website](https://rust-lang.org/tools/install/).
+
+### Pixi
+
+This application builds against GDAL using the pixi package manager, fetching source from conda-forge. If you don't have pixi installed, check the [Pixi Website](https://pixi.prefix.dev/latest/installation/).
 
 ### Fetch the repository
 
@@ -62,26 +70,40 @@ git clone https://github.com/LeoLetellier/RasterView
 cd RasterView
 ```
 
-### Local build
+### Development
 
 ```shell
+pixi run debug-run
+```
+
+### Permanent installation for the current machine
+
+```shell
+pixi run release-native
+```
+
+This binary bundle GDAL, and is compiled with optimization relative to your current hardware.
+
+The binary will be located in: `./target/release-native`.
+
+### **Advanced**: Permanent installation for the current machine with local GDAL
+
+This works only if GDAL was correctly installed on your system and with a compatible version. You can try with or without the `bindgen` feature.
+
+```shell
+cargo remove gdal-sys gdal-src
+cargo add gdal -F bindgen
 cargo build --release
 ```
 
-The binary will be located in `./target/release/`.
+The binary will be located in: `./target/release`.
 
-If you have issues with the local GDAL installation, try using GDAL in a conda environment instead, such as:
-
-```shell
-conda create -n gdal311 -c conda-forge gdal=3.11
-conda activate gdal311
-export GDALHOME=$CONDA_PREFIX
-export PKG_CONFIG_PATH="$CONDA_PREFIX/lib/pkgconfig:$PKG_CONFIG_PATH"
-cargo clean
-```
-
-### Permanent installation
+### Distributed installations / Actions
 
 ```shell
-cargo install --path .
+pixi run realease-static
 ```
+
+This binary bundle GDAL, and is compiled with optimization for your OS.
+
+The binary will be located in: `./target/release-static`.

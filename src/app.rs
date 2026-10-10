@@ -161,7 +161,7 @@ impl eframe::App for RasterView {
         // Vrt form
         self.ui_vrt_form(ui.ctx());
 
-        if self.app_state.settings.show_theme_panel {
+        if self.app_state.settings.show_theme_panel & cfg!(debug_assertions) {
             ui.ctx().show_viewport_immediate(
                 egui::ViewportId::from_hash_of("style_editor"),
                 egui::ViewportBuilder::default()

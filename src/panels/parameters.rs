@@ -453,14 +453,16 @@ impl SettingsPanel {
                                     &d.show_tiles,
                                     |ui, v| toggle(ui, v),
                                 );
-                                f.row(
-                                    ui,
-                                    "Theme panel",
-                                    "Show the theme editor panel.",
-                                    &mut s.show_theme_panel,
-                                    &d.show_theme_panel,
-                                    |ui, v| toggle(ui, v),
-                                );
+                                if cfg!(debug_assertions) {
+                                    f.row(
+                                        ui,
+                                        "Theme panel",
+                                        "Show the theme editor panel.",
+                                        &mut s.show_theme_panel,
+                                        &d.show_theme_panel,
+                                        |ui, v| toggle(ui, v),
+                                    );
+                                }
                                 f.row(
                                     ui,
                                     "Frame rate",

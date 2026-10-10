@@ -46,6 +46,7 @@ impl Viewer {
             .allow_scroll(false)
             .allow_zoom(false)
             .show_grid(false)
+            // invert y axis grid to match raster pixel
             .y_axis_formatter(inverted_y_formatter(raster_size.1 as f64))
             .y_grid_spacer(inverted_y_grid_spacer(raster_size.1 as f64));
 

@@ -29,6 +29,15 @@ fn main() -> eframe::Result {
     //         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(default_level));
     //
     //     tracing_subscriber::fmt().with_env_filter(filter).init();
+    if cfg!(debug_assertions) {
+        println!("GDAL {}", gdal::version::VersionInfo::version_report());
+        println!("drivers: {}", gdal::DriverManager::count());
+        for i in 0..gdal::DriverManager::count() {
+            if let Ok(d) = gdal::DriverManager::get_driver(i) {
+                println!("  {}", d.short_name());
+            }
+        }
+    }
 
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default(),

@@ -131,24 +131,18 @@ pub(crate) struct ViewMode {
     pub(crate) cpx_mode: CpxMode,
     pub(crate) color_interpretation: ColorInterpretation,
     pub(crate) ranging_mode: ColorRanging,
-    pub(crate) norm_mode_panchro: NormModePanchro,
-    pub(crate) norm_mode_rgb: NormModeRGB,
-    pub(crate) norm_mode_extent: NormModeExtent,
     pub(crate) approx_stats: bool,
 }
 
 impl Default for ViewMode {
     fn default() -> Self {
         Self {
-            active_viewer: ActiveViewer::Panchro,
+            active_viewer: ActiveViewer::Band,
             panchro_band: 1,
             rgb_bands: (1, 2, 3),
             cpx_mode: CpxMode::WrappedPhase,
             color_interpretation: ColorInterpretation::default(),
             ranging_mode: ColorRanging::MinMax,
-            norm_mode_panchro: NormModePanchro::PerBand,
-            norm_mode_rgb: NormModeRGB::PerBand,
-            norm_mode_extent: NormModeExtent::Raster,
             approx_stats: true,
         }
     }
@@ -162,26 +156,8 @@ pub(crate) enum ColorRanging {
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
-pub(crate) enum NormModePanchro {
-    PerBand,
-    AllBands,
-}
-
-#[derive(Debug, PartialEq, Clone, Eq, Hash)]
-pub(crate) enum NormModeRGB {
-    PerBand,
-    RGBBands,
-    AllBands,
-}
-
-#[derive(Debug, PartialEq, Clone, Eq, Hash)]
-pub(crate) enum NormModeExtent {
-    Raster,
-    CurrentView,
-}
-
-#[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub(crate) enum ActiveViewer {
-    Panchro,
+    Band,
     Color,
+    Index,
 }
