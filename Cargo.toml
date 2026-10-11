@@ -57,8 +57,8 @@ strip = true # remove symbols
 # [profile.dev.package."*"]
 # opt-level = 2 # optimize a bit deps on debug
 
-[profile.rnat]
+[profile.native]
 inherits = "release"
 
-[profile.rstat]
+[profile.static]
 inherits = "release"

@@ -11,24 +11,8 @@ pub(crate) use egui_phosphor as icon;
 pub(crate) use viewers::Viewer;
 
 fn main() -> eframe::Result {
-    //     const SHOW_ALL_TRACING: bool = false;
-    //
-    //     let default_level = if cfg!(debug_assertions) {
-    //         if SHOW_ALL_TRACING {
-    //             "debug"
-    //         } else {
-    //             "rview=debug,warn"
-    //         }
-    //     } else if SHOW_ALL_TRACING {
-    //         "info"
-    //     } else {
-    //         "rview=info,warn"
-    //     };
-    //
-    //     let filter = tracing_subscriber::EnvFilter::try_from_default_env()
-    //         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(default_level));
-    //
-    //     tracing_subscriber::fmt().with_env_filter(filter).init();
+    let _ = app::init_logging_once(false);
+
     if cfg!(debug_assertions) {
         println!("GDAL {}", gdal::version::VersionInfo::version_report());
         println!("drivers: {}", gdal::DriverManager::count());

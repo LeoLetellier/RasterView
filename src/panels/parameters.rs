@@ -73,7 +73,7 @@ impl Default for Settings {
             preload_stats: true,
             // Debug
             show_tiles: is_debug,
-            show_theme_panel: is_debug,
+            show_theme_panel: false,
             show_frame_rate: is_debug,
             verbose_logs: is_debug,
         }

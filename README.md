@@ -101,7 +101,7 @@ The binary will be located in: `./target/release`.
 ### Distributed installations / Actions
 
 ```shell
-pixi run realease-static
+pixi run release-static
 ```
 
 This binary bundle GDAL, and is compiled with optimization for your OS.

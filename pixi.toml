@@ -37,19 +37,21 @@ DYLD_FALLBACK_LIBRARY_PATH = "$CONDA_PREFIX/lib"
 [feature.dev.tasks]
 debug-build = "cargo build"
 debug-run = "cargo run"
-release = "cargo build --release"
+release-build = "cargo build --release"
+release-run = "cargo run --release"
 
 [feature.static.dependencies]
 cmake = "*"
 ninja = "*"
+sqlite = "*"
 
 [feature.static.activation.env]
 # Use Ninja to reduce path length (path length limit for build files on Windows)
 CMAKE_GENERATOR = "Ninja"
 
 [feature.static.tasks]
-release-native = { cmd = "cargo build --features gdal-bundled --profile rnat", env = { RUSTFLAGS = "-C target-cpu=native" } }
-release-static = "cargo build --features gdal-bundled --profile rstat"
+release-native = { cmd = "cargo build --features gdal-bundled --profile native", env = { RUSTFLAGS = "-C target-cpu=native" } }
+release-static = "cargo build --features gdal-bundled --profile static"
 
 [environments]
 default = ["dev"]

@@ -1,6 +1,7 @@
 use anyhow::Result;
 use egui_phosphor as icon;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use crate::panels::LeftPanel;
 use crate::panels::parameters::{Settings, SettingsPanel};
@@ -41,9 +42,15 @@ pub(crate) struct AppState {
     pub(crate) tracing_handle: TracingHandle,
 }
 
+static TRACING_HANDLE: OnceLock<TracingHandle> = OnceLock::new();
+
+pub(crate) fn init_logging_once(verbose: bool) -> TracingHandle {
+    TRACING_HANDLE.get_or_init(|| init_logging(verbose)).clone()
+}
+
 impl Default for AppState {
     fn default() -> Self {
-        let tracing_handle = init_logging(false); // hardcoded
+        let tracing_handle = init_logging_once(false);
         Self {
             pyramid_promise: Default::default(),
             show_vrt_form: Default::default(),
@@ -78,7 +85,6 @@ fn init_logging(verbose: bool) -> TracingHandle {
 }
 
 fn apply_log_level(handle: &TracingHandle, verbose: bool) {
-    let f = if verbose { "debug" } else { "info" };
     let _ = handle.reload(build_filter(verbose));
 }
 
@@ -161,7 +167,7 @@ impl eframe::App for RasterView {
         // Vrt form
         self.ui_vrt_form(ui.ctx());
 
-        if self.app_state.settings.show_theme_panel & cfg!(debug_assertions) {
+        if self.app_state.settings.show_theme_panel && cfg!(debug_assertions) {
             ui.ctx().show_viewport_immediate(
                 egui::ViewportId::from_hash_of("style_editor"),
                 egui::ViewportBuilder::default()
@@ -169,9 +175,9 @@ impl eframe::App for RasterView {
                     .with_inner_size([420.0, 720.0]),
                 |ui, class| {
                     // Fallback if the backend can't open real windows
-                    if class == egui::ViewportClass::EmbeddedWindow {
-                        // draw an egui::Window here instead if you care
-                    }
+                    // if class == egui::ViewportClass::EmbeddedWindow {
+                    //     // draw an egui::Window here instead if you care
+                    // }
 
                     egui::CentralPanel::default().show(ui, |ui| {
                         egui::ScrollArea::vertical().show(ui, |ui| {
