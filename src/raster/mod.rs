@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 use std::{ops::Deref, path::Path};
 
+use crate::raster::source_metadata::SourceMetadata;
 use crate::{
     raster::stats::BandStatStatus,
     viewers::{
@@ -14,12 +15,14 @@ use crate::{
 };
 
 pub(crate) mod loading;
+pub(crate) mod source_metadata;
 pub(crate) mod stats;
 pub(crate) mod xml_vrt;
 
 #[derive(Debug)]
 pub(crate) struct RasterHandler {
     path: String,
+    pub(crate) src_metadata: SourceMetadata,
     gdal_dataset: Dataset,
     raster_metadata: RasterMetadata,
     texture_worker: TextureWorker,
@@ -82,8 +85,11 @@ impl RasterHandler {
                 .collect(),
         ));
 
+        let path = path.as_ref();
+
         Ok(Self {
-            path: path.as_ref().to_string_lossy().into_owned(),
+            path: path.to_string_lossy().into_owned(),
+            src_metadata: SourceMetadata::from_path(path)?,
             gdal_dataset,
             raster_metadata,
             texture_worker,

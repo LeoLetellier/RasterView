@@ -8,7 +8,7 @@
 
 ## ✨ Features
 
-* **GDAL raster support**: open `GTiff`, `ENVI`, `ROIPAC` files and more... If it is a raster it will open.
+* **GDAL raster support**: open `GTiff`, `ENVI`, `ROIPAC` files and more... If it is a raster it will open (190 drivers available in the bundled version).
 * **Raster information**: display the metadata of your raster. Handy.
 * **Fast display**: compiled rendering operations and tile caching allows seemless raster exploration. For very large rasters, consider creating overviews using GDAL (`gdaladdo` command) before opening the raster in the application, or convert the file to `COG` format. ``#WIP``
 * [**Standard color palettes**](./resources/colormaps/README.md): use perceptually perceptive colormaps for intuitive color rendering. ``#WIP``

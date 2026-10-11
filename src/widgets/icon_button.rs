@@ -1,101 +1,11 @@
 use egui::{
-    Align2, Color32, FontDefinitions, FontFamily, FontId, Pos2, Rect, Response, Sense, Stroke,
-    StrokeKind, Ui, Widget, pos2, vec2,
+    Align2, Color32, FontId, Pos2, Rect, Response, Sense, Stroke, StrokeKind, Ui, Widget, pos2,
+    vec2,
 };
 
-// ---------------------------------------------------------------------------
-// Phosphor font handling (private to this module)
-// ---------------------------------------------------------------------------
+use super::{fill_family, regular_family};
 
-const REGULAR_FONT: &str = "phosphor-regular-font";
-const FILL_FONT: &str = "phosphor-fill-font";
-const REGULAR_FAMILY: &str = "phosphor-regular";
-const FILL_FAMILY: &str = "phosphor-fill";
-
-fn regular_family() -> FontFamily {
-    FontFamily::Name(REGULAR_FAMILY.into())
-}
-
-fn fill_family() -> FontFamily {
-    FontFamily::Name(FILL_FAMILY.into())
-}
-
-/// Call once in `setup_custom_fonts`, AFTER your text fonts are in
-/// `FontDefinitions`. Replaces both `icon::add_to_fonts(...)` calls.
-pub fn install_phosphor(fonts: &mut FontDefinitions) {
-    fonts.font_data.insert(
-        REGULAR_FONT.to_owned(),
-        egui_phosphor::Variant::Regular.font_data().into(),
-    );
-    fonts.font_data.insert(
-        FILL_FONT.to_owned(),
-        egui_phosphor::Variant::Fill.font_data().into(),
-    );
-
-    // Text fonts as fallback (also silences the '◻' / '?' warning)
-    let fallback = fonts
-        .families
-        .get(&FontFamily::Proportional)
-        .cloned()
-        .unwrap_or_default();
-
-    let named = |first: &str| {
-        let mut v = vec![first.to_owned()];
-        v.extend(fallback.iter().cloned());
-        v
-    };
-    fonts.families.insert(regular_family(), named(REGULAR_FONT));
-    fonts.families.insert(fill_family(), named(FILL_FONT));
-
-    // Keeps ui.button(icon::regular::X) working elsewhere.
-    // Delete once everything uses IconButton.
-    fonts
-        .families
-        .entry(FontFamily::Proportional)
-        .or_default()
-        .push(REGULAR_FONT.to_owned());
-}
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub enum Side {
-    Top,
-    Bottom,
-    #[default]
-    Left,
-    Right,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub enum Indicator {
-    /// Line along one edge (VS Code style)
-    #[default]
-    Bar,
-    /// Small dot near one edge
-    Dot,
-    /// Outline around the whole button
-    Border,
-    /// Only the icon color / glyph changes
-    None,
-}
-
-/// Any color left as `None` is derived from the current theme.
-#[derive(Clone, Copy, Default)]
-pub struct IconButtonColors {
-    pub idle: Option<Color32>,
-    pub hover: Option<Color32>,
-    pub selected: Option<Color32>,
-    pub hover_bg: Option<Color32>,
-    pub indicator: Option<Color32>,
-}
-
-// ---------------------------------------------------------------------------
-// Widget
-// ---------------------------------------------------------------------------
-
+/// Button with a phosphor icon and numerous customization
 pub struct IconButton {
     icon: &'static str,
     fill_icon: Option<&'static str>,
@@ -110,8 +20,42 @@ pub struct IconButton {
     colors: IconButtonColors,
 }
 
+/// Position of the `Indicator`, when used with `Bar` or `Dot`
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Side {
+    Top,
+    Bottom,
+    #[default]
+    Left,
+    Right,
+}
+
+/// Ui element used when the button is in active / selected state
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Indicator {
+    /// Line along one edge (VS Code style)
+    #[default]
+    Bar,
+    /// Small dot near one edge
+    Dot,
+    /// Outline around the whole button
+    Border,
+    /// Only the icon color / glyph changes
+    None,
+}
+
+/// Color scheme to use depending on the button state, overriding the global theme
+#[derive(Clone, Copy, Default)]
+pub struct IconButtonColors {
+    pub idle: Option<Color32>,
+    pub hover: Option<Color32>,
+    pub selected: Option<Color32>,
+    pub hover_bg: Option<Color32>,
+    pub indicator: Option<Color32>,
+}
+
 impl IconButton {
-    /// `icon` is a Phosphor *regular* glyph, e.g. `icon::regular::GEAR`.
+    /// Create a new button from a Phosphor icon and a state (selected)
     pub fn new(icon: &'static str, selected: bool) -> Self {
         Self {
             icon,
@@ -191,7 +135,7 @@ impl Widget for IconButton {
             return response;
         }
 
-        // ---- animation state (all 0..1) ----
+        // animation
         let ctx = ui.ctx().clone();
         let id = response.id;
         let hover_t =
@@ -203,11 +147,10 @@ impl Widget for IconButton {
             0.08,
         );
 
-        // ---- colors ----
+        // color overriding
         let v = ui.visuals();
         let enabled = ui.is_enabled();
         let accent = v.hyperlink_color;
-
         let idle = self.colors.idle.unwrap_or_else(|| v.weak_text_color());
         let hover = self.colors.hover.unwrap_or_else(|| v.strong_text_color());
         let selected = self.colors.selected.unwrap_or(accent);
@@ -226,13 +169,13 @@ impl Widget for IconButton {
 
         let painter = ui.painter();
 
-        // ---- hover background ----
+        // background on hover
         let bg_t = hover_t * (1.0 - 0.4 * sel_t);
         if bg_t > 0.0 {
             painter.rect_filled(rect, self.rounding, hover_bg.gamma_multiply(bg_t));
         }
 
-        // ---- selected indicator ----
+        // selected indicator
         if sel_t > 0.0 {
             paint_indicator(
                 painter,
@@ -246,7 +189,7 @@ impl Widget for IconButton {
             );
         }
 
-        // ---- icon (glyph and family chosen together) ----
+        // displaying the phosphor icon
         let (glyph, family) = match (self.selected, self.fill_icon) {
             (true, Some(fill)) => (fill, fill_family()),
             _ => (self.icon, regular_family()),
@@ -265,6 +208,7 @@ impl Widget for IconButton {
     }
 }
 
+/// draw the selected indicator
 #[allow(clippy::too_many_arguments)]
 fn paint_indicator(
     painter: &egui::Painter,

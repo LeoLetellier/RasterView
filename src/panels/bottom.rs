@@ -1,9 +1,8 @@
 use super::{LeftPanel, panel_button};
 use crate::RasterView;
 use crate::icon;
-use crate::widgets::buttons::IconButton;
-use crate::widgets::buttons::Side;
-use egui::{Color32, RichText, Ui};
+use crate::widgets::icon_button::{IconButton, Indicator, Side};
+use egui::{Color32, Ui};
 
 impl RasterView {
     pub(crate) fn ui_bottom_panel(&mut self, ui: &mut Ui) {
@@ -18,6 +17,7 @@ impl RasterView {
                                 .fill(icon::fill::GEAR)
                                 .size(24.0)
                                 .side(Side::Bottom)
+                                .indicator(Indicator::Border)
                                 .accent(Color32::from_rgb(30, 144, 255)),
                         )
                         .on_hover_text("Parameters");

@@ -1,6 +1,8 @@
-pub(crate) mod buttons;
+pub(crate) mod icon_button;
+pub(crate) mod info_card;
+pub(crate) mod inspector;
 
-use egui::{FontData, FontDefinitions, FontFamily};
+use egui::{FontDefinitions, FontFamily};
 use egui_phosphor as icon;
 
 const REGULAR_FONT: &str = "phosphor-regular-font";

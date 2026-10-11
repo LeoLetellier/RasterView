@@ -2,7 +2,7 @@ use crate::icon;
 use egui::{Color32, Ui, widget_text::WidgetText};
 
 use crate::RasterView;
-use crate::widgets::buttons::{IconButton, Side};
+use crate::widgets::icon_button::{IconButton, Indicator, Side};
 
 pub(crate) mod bottom;
 pub(crate) mod metadata;
@@ -53,37 +53,6 @@ impl RasterView {
     }
 }
 
-//////////////////////// RIGHT PANEL /////////////////////////////
-//
-// #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-// pub(crate) enum RightPanel {
-//     Palette,
-// }
-//
-// impl Panel for RightPanel {
-//     fn symbol(&self) -> &'static str {
-//         match &self {
-//             RightPanel::Palette => icon::regular::PAINT_BRUSH_HOUSEHOLD,
-//         }
-//     }
-//
-//     fn symbol_highlight(&self) -> &'static str {
-//         match &self {
-//             RightPanel::Palette => icon::fill::PAINT_BRUSH_HOUSEHOLD,
-//         }
-//     }
-// }
-//
-// impl RasterView {
-//     pub(crate) fn ui_right_panel(&mut self, ui: &mut Ui) {
-//         match &self.right_panel {
-//             RightPanel::Palette => self.ui_palette_panel(ui),
-//         }
-//     }
-// }
-
-//////////////////////// HELPERS /////////////////////////////
-
 /// Create a button linked to a panel state, switching between panels or toggling the panel visibility
 pub(super) fn panel_button<P: Panel>(
     is_open: &mut bool,
@@ -100,6 +69,7 @@ pub(super) fn panel_button<P: Panel>(
             IconButton::new(panel.symbol(), highlight)
                 .fill(panel.symbol_highlight())
                 .side(Side::Bottom)
+                .indicator(Indicator::Border)
                 .accent(Color32::from_rgb(30, 144, 255))
                 .size(24.0),
         )

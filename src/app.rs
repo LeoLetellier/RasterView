@@ -1,5 +1,4 @@
 use anyhow::Result;
-use egui_phosphor as icon;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
