@@ -2,6 +2,8 @@ use super::{LeftPanel, panel_button};
 use crate::RasterView;
 use crate::icon;
 use crate::widgets::icon_button::{IconButton, Indicator, Side};
+use crate::widgets::value_bar::ValueBar;
+use crate::widgets::value_bar::ValueItem;
 use egui::{Color32, Ui};
 
 impl RasterView {
@@ -51,23 +53,46 @@ impl RasterView {
                         egui::warn_if_debug_build(ui);
                         if self.app_state.settings.show_frame_rate {
                             let ms = ui.ctx().input(|i| i.unstable_dt * 1000.0);
-                            ui.label(format!("{ms:.1} ms"));
+                            ui.add(
+                                ValueBar::new()
+                                    .name("frame")
+                                    .item(ValueItem::new(ms).unit("ms").precision(1).chars(5)),
+                            );
                         }
+                        ui.separator();
                     }
 
-                    if let Some(view) = &self.viewer
-                        && let Some(px_pos) = view.state.last_cursor_pos
-                    {
-                        // Get pixel integers, so floor the value
-                        let x_pos = px_pos.x.floor();
-                        let y_pos = px_pos.y.floor();
+                    if let Some(view) = &self.viewer {
+                        let gt = view.raster_handler.get_pixel_geotransform();
+                        let cur = view.state.last_cursor_pos; // Option<PlotPoint>, None when outside the plot
 
-                        if let Some(gt) = view.raster_handler.get_pixel_geotransform() {
-                            let geo_pos = gt.pixel_to_geo(x_pos, y_pos);
-                            ui.label(format!(" | geo: ({:.3},{:.3})", geo_pos.0, geo_pos.1));
-                        }
-                        ui.label(format!("px: ({:.0},{:.0})", x_pos, y_pos));
-                        // grid-four, globe-simple
+                        // Pixel indices (floored)
+                        let px = cur.map(|p| (p.x.floor(), p.y.floor()));
+
+                        // Geo position at the pixel center, None if not georeferenced or cursor outside
+                        let geo = cur
+                            .zip(gt)
+                            .map(|(p, gt)| gt.pixel_to_geo(p.x.floor() + 0.5, p.y.floor() + 0.5));
+
+                        ui.horizontal(|ui| {
+                            ui.add(
+                                ValueBar::new()
+                                    .name("px")
+                                    .item(ValueItem::new(px.map(|p| p.0)).int())
+                                    .item(ValueItem::new(px.map(|p| p.1)).int()),
+                            );
+
+                            // Decided from metadata, not from cursor presence, so the layout stays stable.
+                            if gt.is_some() {
+                                ui.separator();
+                                ui.add(
+                                    ValueBar::new()
+                                        .name("geo")
+                                        .item(ValueItem::new(geo.map(|g| g.0)).label("E"))
+                                        .item(ValueItem::new(geo.map(|g| g.1)).label("N")),
+                                );
+                            }
+                        });
                     }
                 });
             });

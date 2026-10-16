@@ -1,6 +1,7 @@
 pub(crate) mod icon_button;
 pub(crate) mod info_card;
 pub(crate) mod inspector;
+pub(crate) mod value_bar;
 
 use egui::{FontDefinitions, FontFamily};
 use egui_phosphor as icon;

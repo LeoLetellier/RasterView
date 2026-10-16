@@ -56,6 +56,7 @@ impl RasterView {
                     ins.section("Dimensions", |ins| {
                         ins.text("Width (X)", size.0);
                         ins.text("Height (Y)", size.1);
+                        ins.text("Bands (Z)", band_nb);
                     });
 
                     ins.section("Projection", |ins| {
@@ -153,7 +154,7 @@ impl RasterView {
                 let band_label = if band.description.is_empty() {
                     format!("Band {}", idx + 1)
                 } else {
-                    format!("Band {}: {}", idx + 1, &band.description)
+                    format!("Band {}: {}", idx + 1, band.description)
                 };
                 ui.collapsing(band_label, |ui| {
                     self.ui_band(band, ui);

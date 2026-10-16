@@ -250,7 +250,7 @@ impl RasterView {
         if let Some(params) = built {
             let vrt_xml = simulate_vrt_path(&params);
             // allow GDAL to reach this path on disk from vrt, only for the duration
-            if let Ok(_) = allow_raw_source(params.array_path.parent().unwrap_or(Path::new("."))) {
+            if allow_raw_source(params.array_path.parent().unwrap_or(Path::new("."))).is_ok() {
                 let viewer = vrt_xml
                     .map_err(anyhow::Error::from)
                     .and_then(|vrt| Viewer::with_raster(vrt.as_path(), ctx.clone()));

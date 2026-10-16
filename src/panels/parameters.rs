@@ -2,7 +2,7 @@ use std::cell::Cell;
 
 use eframe::egui::{
     self, Align, Align2, Button, Color32, ComboBox, CornerRadius, CursorIcon, DragValue, FontId,
-    Id, Layout, Modal, Rect, Response, RichText, ScrollArea, Sense, Slider, TextEdit, Ui,
+    Id, Layout, Modal, Rect, Response, RichText, ScrollArea, Sense, TextEdit, Ui,
     UiBuilder, Vec2, pos2, vec2,
 };
 use serde::{Deserialize, Serialize};
@@ -384,7 +384,7 @@ impl SettingsPanel {
                                     "Resolve REAL4 files automatically (lect.in and .rsc headers).",
                                     &mut s.autoresolve_real4,
                                     &d.autoresolve_real4,
-                                    |ui, v| toggle(ui, v),
+                                    toggle,
                                 );
                                 f.row(
                                     ui,
@@ -392,7 +392,7 @@ impl SettingsPanel {
                                     "Resolve AMSTER files automatically (AMSTer Engine TextFile headers).",
                                     &mut s.autoresolve_amster,
                                     &d.autoresolve_amster,
-                                    |ui, v| toggle(ui, v),
+                                    toggle,
                                 );
                             });
 
@@ -440,7 +440,7 @@ impl SettingsPanel {
                                     "Compute statistics ahead of time.",
                                     &mut s.preload_stats,
                                     &d.preload_stats,
-                                    |ui, v| toggle(ui, v),
+                                    toggle,
                                 );
                             });
 
@@ -451,7 +451,7 @@ impl SettingsPanel {
                                     "Draw tile boundaries.",
                                     &mut s.show_tiles,
                                     &d.show_tiles,
-                                    |ui, v| toggle(ui, v),
+                                    toggle,
                                 );
                                 if cfg!(debug_assertions) {
                                     f.row(
@@ -460,7 +460,7 @@ impl SettingsPanel {
                                         "Show the theme editor panel.",
                                         &mut s.show_theme_panel,
                                         &d.show_theme_panel,
-                                        |ui, v| toggle(ui, v),
+                                        toggle,
                                     );
                                 }
                                 f.row(
@@ -469,7 +469,7 @@ impl SettingsPanel {
                                     "Show frame timings on screen.",
                                     &mut s.show_frame_rate,
                                     &d.show_frame_rate,
-                                    |ui, v| toggle(ui, v),
+                                    toggle,
                                 );
                                 // `row` returns true when the value changed (including via "reset"),
                                 // which is where you'd hook `set_verbose` later.
@@ -479,7 +479,7 @@ impl SettingsPanel {
                                     "",
                                     &mut s.verbose_logs,
                                     &d.verbose_logs,
-                                    |ui, v| toggle(ui, v),
+                                    toggle,
                                 );
                             });
 
@@ -501,11 +501,10 @@ impl SettingsPanel {
                 self.active = target;
             }
         }
-        if self.locked.is_none() {
-            if let Some(cur) = form.current.get().or(form.first.get()) {
+        if self.locked.is_none()
+            && let Some(cur) = form.current.get().or(form.first.get()) {
                 self.active = cur;
             }
-        }
 
         if clicked.is_some() {
             self.pending = clicked;

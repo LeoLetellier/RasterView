@@ -35,13 +35,12 @@ pub struct FileMetadata {
 impl SourceMetadata {
     pub fn from_path(path: &Path) -> io::Result<Self> {
         // Check this first: fs calls and path::absolute would mangle or reject a /vsimem/ path.
-        if let Some(s) = path.to_str() {
-            if is_vsimem(s) {
+        if let Some(s) = path.to_str()
+            && is_vsimem(s) {
                 return Ok(Self::Vrt(VrtMetadata {
                     vsi_path: s.replace('\\', "/"),
                 }));
             }
-        }
         FileMetadata::from_path(path).map(Self::File)
     }
 }

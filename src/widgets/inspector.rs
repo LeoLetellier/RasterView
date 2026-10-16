@@ -471,11 +471,10 @@ impl<'a> Field<'a> {
         let r = ui.add_enabled_ui(opts.enabled, |ui| {
             changed = kind(ui, &opts, cfg);
         });
-        if !opts.own_tooltip {
-            if let Some(t) = &opts.tooltip {
+        if !opts.own_tooltip
+            && let Some(t) = &opts.tooltip {
                 r.response.on_hover_text(t);
             }
-        }
         changed
     }
 }

@@ -35,7 +35,7 @@
 - [ ] Implement loading spinner and stats waiting
 - [ ] Add clap cli cmd
 - [ ] Organize parameters panel
-- [ ] Make button and forms wrapper
+- [x] Make button and forms wrapper
 - [ ] Workaround for loading complex dtype (Rust gdal limitation)
 - [ ] Save screenshot of current view (view + colorbar, need own module)
 - [ ] Add index view mode (multi-band raster)
@@ -62,6 +62,8 @@ This application builds using the Rust compiler. If you don't have rust installe
 ### Pixi
 
 This application builds against GDAL using the pixi package manager, fetching source from conda-forge. If you don't have pixi installed, check the [Pixi Website](https://pixi.prefix.dev/latest/installation/).
+
+You can either use directly the pixi commands, or launch the `pixi shell`, to have the env variables correctly set, and then use normal cargo commands. When bundling (embedding GDAL), GDAl is built from source so no need for pixi.
 
 ### Fetch the repository
 

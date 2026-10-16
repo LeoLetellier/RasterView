@@ -100,14 +100,13 @@ impl RasterView {
     ///
     /// Need the egui context to register custom icons from phosphoricons
     pub(crate) fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        let ctx = cc.egui_ctx.clone();
+        let _ctx = cc.egui_ctx.clone();
 
         let mut app_state = AppState::default();
-        if let Some(storage) = cc.storage {
-            if let Some(settings) = eframe::get_value::<Settings>(storage, SETTINGS_KEY) {
+        if let Some(storage) = cc.storage
+            && let Some(settings) = eframe::get_value::<Settings>(storage, SETTINGS_KEY) {
                 app_state.settings = settings;
             }
-        }
 
         Self {
             raster_path: Default::default(),
@@ -172,7 +171,7 @@ impl eframe::App for RasterView {
                 egui::ViewportBuilder::default()
                     .with_title("Style editor")
                     .with_inner_size([420.0, 720.0]),
-                |ui, class| {
+                |ui, _class| {
                     // Fallback if the backend can't open real windows
                     // if class == egui::ViewportClass::EmbeddedWindow {
                     //     // draw an egui::Window here instead if you care
@@ -190,7 +189,7 @@ impl eframe::App for RasterView {
         // Drag n Drop
         ui.ctx().input(|i| {
             if let Some(dropped) = i.raw.dropped_files.first() {
-                let _ = self.update_path(&dropped.path(), ui.ctx().clone());
+                let _ = self.update_path(dropped.path(), ui.ctx().clone());
             }
         });
 

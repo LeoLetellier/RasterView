@@ -167,7 +167,7 @@ impl Viewer {
         // Get state of the stats
         let band = self.view_mode.panchro_band;
         let band_minmax = rh.band_minmax(band).map(|mm| (mm.0 as f32, mm.1 as f32));
-        let all_minmax: Option<(f32, f32)> = (1..=rh.raster_count())
+        let _all_minmax: Option<(f32, f32)> = (1..=rh.raster_count())
             .map(|b| rh.band_minmax(b))
             .try_fold((f32::INFINITY, f32::NEG_INFINITY), |acc, mm| {
                 mm.map(|(mn, mx)| (acc.0.min(mn as f32), acc.1.max(mx as f32)))
@@ -176,7 +176,7 @@ impl Viewer {
             .band_percentile(band, perc)
             .zip(rh.band_percentile(band, 100.0 - perc))
             .map(|(lo, hi)| (lo as f32, hi as f32));
-        let all_percentile: Option<(f32, f32)> = (1..=rh.raster_count())
+        let _all_percentile: Option<(f32, f32)> = (1..=rh.raster_count())
             .map(|b| {
                 rh.band_percentile(b, perc)
                     .zip(rh.band_percentile(b, 100.0 - perc))
@@ -225,7 +225,7 @@ impl Viewer {
         };
 
         // --- combined stats across an arbitrary set of bands ---
-        let combined_minmax = |bands: &[usize]| -> Option<(f32, f32)> {
+        let _combined_minmax = |bands: &[usize]| -> Option<(f32, f32)> {
             bands
                 .iter()
                 .map(|&b| rh.band_minmax(b))
@@ -233,7 +233,7 @@ impl Viewer {
                     mm.map(|(mn, mx)| (acc.0.min(mn as f32), acc.1.max(mx as f32)))
                 })
         };
-        let combined_percentile = |bands: &[usize]| -> Option<(f32, f32)> {
+        let _combined_percentile = |bands: &[usize]| -> Option<(f32, f32)> {
             bands
                 .iter()
                 .map(|&b| {
@@ -245,8 +245,8 @@ impl Viewer {
                 })
         };
 
-        let all_bands: Vec<usize> = (1..=rh.raster_count()).collect();
-        let rgb_bands = [red, green, blue];
+        let _all_bands: Vec<usize> = (1..=rh.raster_count()).collect();
+        let _rgb_bands = [red, green, blue];
 
         match vm.ranging_mode {
             ColorRanging::Manual => Some((manual_range, manual_range, manual_range)),
