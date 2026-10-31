@@ -1,22 +1,15 @@
 pub(crate) mod icon_button;
 pub(crate) mod info_card;
 pub(crate) mod inspector;
+pub(crate) mod phosphor;
 pub(crate) mod value_bar;
 
 use egui::{FontDefinitions, FontFamily};
 use egui_phosphor as icon;
+use phosphor::{fill_family, regular_family};
 
 const REGULAR_FONT: &str = "phosphor-regular-font";
 const FILL_FONT: &str = "phosphor-fill-font";
-const REGULAR_FAMILY: &str = "phosphor-regular";
-const FILL_FAMILY: &str = "phosphor-fill";
-
-fn regular_family() -> FontFamily {
-    FontFamily::Name(REGULAR_FAMILY.into())
-}
-fn fill_family() -> FontFamily {
-    FontFamily::Name(FILL_FAMILY.into())
-}
 
 /// Call once in `setup_custom_fonts`, AFTER your text fonts are in
 /// `FontDefinitions` (it copies the current Proportional list as fallback).

@@ -1,3 +1,4 @@
+use crate::raster::RasterHandler;
 use crate::viewers::Viewer;
 use crate::viewers::coords::{Bbox, PixelBox};
 use crate::viewers::tasking::ViewStyle;
@@ -13,33 +14,24 @@ use std::hash::Hash;
 
 impl Viewer {
     /// Determine the tiles needed for a specific viewport extent
-    pub(crate) fn need_tiles(&self) -> Option<Vec<TileDescriptor>> {
-        let raster_size = self.raster_handler.raster_size();
+    pub(crate) fn need_tiles(
+        &self,
+        raster_handler: &mut RasterHandler,
+    ) -> Option<Vec<TileDescriptor>> {
         let lb = self.state.last_bounds?;
-        let view_style = self.task_view()?;
+        let view_style = self.task_view(raster_handler)?;
 
-        let (full_width, full_height) = raster_size;
+        let raster_size = raster_handler.raster_size();
 
         // Determine the current zoom
         let view_extent = (lb.width(), lb.height());
         let screen_size = self.state.last_screen_size?; // needs to be captured from plot_ui.response().rect
 
         let downsampling: usize = self.need_zoom(view_extent, screen_size, raster_size)?;
-        // // Check against the viewmode for which band to load
-        // let bands: Vec<usize> = match self.view_mode.active_viewer {
-        //     ActiveViewer::Panchro => vec![self.view_mode.panchro_band],
-        //     ActiveViewer::Color => {
-        //         let bands = self.view_mode.rgb_bands;
-        //         vec![bands.0, bands.1, bands.2]
-        //     }
-        // };
 
         // Check against viewport bounds to determine which tiles are needed
-        let pixel_bboxes: Vec<PixelBox> = self.tile_in_view(
-            (full_width, full_height),
-            downsampling,
-            self.parameters.viewport_padding,
-        )?;
+        let pixel_bboxes: Vec<PixelBox> =
+            self.tile_in_view(raster_size, downsampling, self.parameters.viewport_padding)?;
 
         // Cartesian product: every needed tile, for every needed band.
         let descriptors = pixel_bboxes

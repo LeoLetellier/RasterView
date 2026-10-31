@@ -1,7 +1,10 @@
-use crate::icon;
+use crate::{
+    Viewer, icon,
+    panels::{metadata::ui_metadata_panel, palette::ui_palette_panel},
+    raster::RasterHandler,
+};
 use egui::{Color32, Ui, widget_text::WidgetText};
 
-use crate::RasterView;
 use crate::widgets::icon_button::{IconButton, Indicator, Side};
 
 pub(crate) mod bottom;
@@ -11,75 +14,81 @@ pub(crate) mod parameters;
 pub(crate) mod top;
 pub(crate) mod vrt_form;
 
-pub(super) trait Panel: PartialEq {
-    fn symbol(&self) -> &'static str;
-    fn symbol_highlight(&self) -> &'static str;
+#[derive(Debug, Default)]
+pub(crate) struct CommandPanel {
+    focus: PanelType,
+    pub(crate) is_open: bool,
 }
 
-//////////////////////// LEFT PANEL /////////////////////////////
-
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub(crate) enum LeftPanel {
+enum PanelType {
     Metadata,
     Palette,
 }
 
-impl Panel for LeftPanel {
+impl Default for PanelType {
+    fn default() -> Self {
+        PanelType::Palette
+    }
+}
+
+impl PanelType {
     fn symbol(&self) -> &'static str {
         match &self {
-            LeftPanel::Metadata => icon::regular::ARTICLE_MEDIUM,
-            LeftPanel::Palette => icon::regular::PAINT_BRUSH_HOUSEHOLD,
+            PanelType::Metadata => icon::regular::ARTICLE_MEDIUM,
+            PanelType::Palette => icon::regular::PAINT_BRUSH_HOUSEHOLD,
         }
     }
 
     fn symbol_highlight(&self) -> &'static str {
         match &self {
-            LeftPanel::Metadata => icon::fill::ARTICLE_MEDIUM,
-            LeftPanel::Palette => icon::fill::PAINT_BRUSH_HOUSEHOLD,
+            PanelType::Metadata => icon::fill::ARTICLE_MEDIUM,
+            PanelType::Palette => icon::fill::PAINT_BRUSH_HOUSEHOLD,
         }
     }
 }
 
-impl RasterView {
-    pub(crate) fn ui_left_panel(&mut self, ui: &mut Ui) {
-        match self.left_panel {
-            LeftPanel::Metadata => {
-                self.ui_metadata_panel(ui);
-            }
-            LeftPanel::Palette => {
-                self.ui_palette_panel(ui);
+impl CommandPanel {
+    pub(crate) fn ui(
+        &self,
+        ui: &mut Ui,
+        viewer: &mut Viewer,
+        raster_handler: &mut Option<RasterHandler>,
+    ) {
+        if let Some(rh) = raster_handler {
+            match self.focus {
+                PanelType::Palette => ui_palette_panel(ui, viewer, rh),
+                PanelType::Metadata => ui_metadata_panel(ui, rh),
             }
         }
     }
-}
 
-/// Create a button linked to a panel state, switching between panels or toggling the panel visibility
-pub(super) fn panel_button<P: Panel>(
-    is_open: &mut bool,
-    current_panel: &mut P,
-    panel: P,
-    ui: &mut Ui,
-    on_hover: impl Into<WidgetText>,
-) {
-    let panel_selected = *current_panel == panel;
-    let highlight = panel_selected && *is_open;
+    pub(crate) fn panel_button(
+        &mut self,
+        ui: &mut Ui,
+        panel: PanelType,
+        on_hover: impl Into<WidgetText>,
+    ) {
+        let panel_selected = self.focus == panel;
+        let highlight = panel_selected && self.is_open;
 
-    let response = ui
-        .add(
-            IconButton::new(panel.symbol(), highlight)
-                .fill(panel.symbol_highlight())
-                .side(Side::Bottom)
-                .indicator(Indicator::Border)
-                .accent(Color32::from_rgb(30, 144, 255))
-                .size(24.0),
-        )
-        .on_hover_text(on_hover);
+        let response = ui
+            .add(
+                IconButton::new(panel.symbol(), highlight)
+                    .fill(panel.symbol_highlight())
+                    .side(Side::Bottom)
+                    .indicator(Indicator::Border)
+                    .accent(Color32::from_rgb(30, 144, 255))
+                    .size(24.0),
+            )
+            .on_hover_text(on_hover);
 
-    if response.clicked() {
-        if panel_selected {
-            *is_open = !*is_open;
-        } else {
-            *current_panel = panel;
+        if response.clicked() {
+            if panel_selected {
+                self.is_open = !self.is_open;
+            } else {
+                self.focus = panel;
+            }
         }
     }
 }

@@ -2,6 +2,7 @@ use std::{ops::Deref, sync::Arc};
 
 use crate::{
     Viewer,
+    raster::RasterHandler,
     viewers::{
         ActiveViewer, ColorRanging, CpxMode,
         cmap::{ColorInterpretation, DbMode},
@@ -152,8 +153,8 @@ impl ColorTask {
 }
 
 impl Viewer {
-    fn compute_range_panchro(&self) -> Option<(f32, f32)> {
-        let rh = &self.raster_handler;
+    fn compute_range_panchro(&self, rh: &mut RasterHandler) -> Option<(f32, f32)> {
+        // TODO move impl to raster handler
         let vm = &self.view_mode;
         let manual_range = (
             vm.color_interpretation.ranging_values.0.into_inner(),
@@ -197,8 +198,11 @@ impl Viewer {
         todo!()
     }
 
-    fn compute_range_color(&self) -> Option<((f32, f32), (f32, f32), (f32, f32))> {
-        let rh = &self.raster_handler;
+    fn compute_range_color(
+        &self,
+        rh: &mut RasterHandler,
+    ) -> Option<((f32, f32), (f32, f32), (f32, f32))> {
+        // TODO move impl to raster handler
         let vm = &self.view_mode;
         let manual_range = (
             vm.color_interpretation.ranging_values.0.into_inner(),
@@ -267,9 +271,9 @@ impl Viewer {
         }
     }
 
-    pub(crate) fn task_view(&self) -> Option<ViewStyle> {
+    pub(crate) fn task_view(&self, rh: &mut RasterHandler) -> Option<ViewStyle> {
+        // TODO move impl to raster handler
         let vm = &self.view_mode;
-        let rh = &self.raster_handler;
         let view_task = match vm.active_viewer {
             ActiveViewer::Band if rh.band_is_complex(vm.panchro_band) => {
                 let range = self.compute_range_panchro_cpx()?;
@@ -278,13 +282,13 @@ impl Viewer {
                 ViewStyle::PanchroCpx(PanchroCpxTask::new(vm.panchro_band, task_ci, vm.cpx_mode))
             }
             ActiveViewer::Band => {
-                let range = self.compute_range_panchro()?;
+                let range = self.compute_range_panchro(rh)?;
                 let mut task_ci = vm.color_interpretation.clone();
                 task_ci.with_ranging_values(range);
                 ViewStyle::Panchro(PanchroTask::new(vm.panchro_band, task_ci))
             }
             ActiveViewer::Color => {
-                let range = self.compute_range_color()?;
+                let range = self.compute_range_color(rh)?;
                 ViewStyle::Color(ColorTask::new(
                     vm.rgb_bands,
                     range,

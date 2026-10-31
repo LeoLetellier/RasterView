@@ -1,100 +1,102 @@
-use super::{LeftPanel, panel_button};
 use crate::RasterView;
-use crate::icon;
-use crate::widgets::icon_button::{IconButton, Indicator, Side};
+use crate::panels::PanelType;
+use crate::raster::CrsKind;
+use crate::viewers::coords::Bbox;
 use crate::widgets::value_bar::ValueBar;
 use crate::widgets::value_bar::ValueItem;
-use egui::{Color32, Ui};
+use egui::Ui;
 
 impl RasterView {
     pub(crate) fn ui_bottom_panel(&mut self, ui: &mut Ui) {
-        egui::Grid::new("bottom grid")
-            .num_columns(3)
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    let is_param_open = self.ui_parameters(ui);
-                    let response = ui
-                        .add(
-                            IconButton::new(icon::regular::GEAR, is_param_open)
-                                .fill(icon::fill::GEAR)
-                                .size(24.0)
-                                .side(Side::Bottom)
-                                .indicator(Indicator::Border)
-                                .accent(Color32::from_rgb(30, 144, 255)),
-                        )
-                        .on_hover_text("Parameters");
+        ui.horizontal(|ui| {
+            // Left side
+            self.panels.command_panel.panel_button(
+                ui,
+                PanelType::Metadata,
+                "Toggle metadata panel",
+            );
+            self.panels
+                .command_panel
+                .panel_button(ui, PanelType::Palette, "Toggle palette panel");
 
-                    if response.clicked() {
-                        self.app_state.settings_panel.is_open = true;
-                    }
-
+            // Right side: takes the remaining width, first added = rightmost
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if cfg!(debug_assertions) {
+                    egui::warn_if_debug_build(ui);
                     ui.separator();
-
-                    panel_button(
-                        &mut self.left_panel_open,
-                        &mut self.left_panel,
-                        LeftPanel::Metadata,
-                        ui,
-                        "Toggle metadata panel",
+                }
+                if self.settings.show_frame_rate {
+                    let ms = ui.ctx().input(|i| i.unstable_dt * 1000.0);
+                    ui.add(
+                        ValueBar::new()
+                            .name("frame")
+                            .item(ValueItem::new(ms).unit("ms").precision(1).chars(4))
+                            .shadowed(),
                     );
-                    panel_button(
-                        &mut self.left_panel_open,
-                        &mut self.left_panel,
-                        LeftPanel::Palette,
-                        ui,
-                        "Toggle palette panel",
-                    );
-                });
+                    ui.separator();
+                }
 
-                ui.horizontal_centered(|_| {});
+                if let Some(raster_handler) = &self.raster_handler {
+                    let gt = raster_handler.get_pixel_geotransform();
+                    let cur = self.viewer.state.last_cursor_pos;
+                    let (rw, rh) = raster_handler.metadata().size;
+                    let bbox = raster_handler.metadata().bbox;
+                    let px = cur.map(|p| (p.x.floor(), p.y.floor()));
+                    let geo = cur
+                        .zip(gt)
+                        .map(|(p, gt)| gt.pixel_to_geo(p.x.floor() + 0.5, p.y.floor() + 0.5));
 
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if cfg!(debug_assertions) {
-                        egui::warn_if_debug_build(ui);
-                        if self.app_state.settings.show_frame_rate {
-                            let ms = ui.ctx().input(|i| i.unstable_dt * 1000.0);
-                            ui.add(
-                                ValueBar::new()
-                                    .name("frame")
-                                    .item(ValueItem::new(ms).unit("ms").precision(1).chars(5)),
-                            );
+                    if gt.is_some() {
+                        let e_label = match raster_handler.raster_metadata.crs_kind {
+                            CrsKind::Geographic => "Lon",
+                            CrsKind::Projected => "E",
+                            CrsKind::Unknown => "Y",
+                        };
+                        let n_label = match raster_handler.raster_metadata.crs_kind {
+                            CrsKind::Geographic => "Lat",
+                            CrsKind::Projected => "N",
+                            CrsKind::Unknown => "X",
+                        };
+                        let mut e_item = ValueItem::new(geo.map(|g| g.0)).label(e_label);
+                        let mut n_item = ValueItem::new(geo.map(|g| g.1)).label(n_label);
+                        if let Some(b) = bbox {
+                            e_item = e_item.bounds(b.xmin(), b.xmax());
+                            n_item = n_item.bounds(b.ymin(), b.ymax());
                         }
-                        ui.separator();
+                        let symbol = match raster_handler.raster_metadata.crs_kind {
+                            CrsKind::Geographic => "°",
+                            CrsKind::Projected => "m",
+                            CrsKind::Unknown => "",
+                        };
+                        ui.add(
+                            ValueBar::new()
+                                .name("Geo")
+                                .item(e_item.unit(symbol))
+                                .item(n_item.unit(symbol))
+                                .shadowed(),
+                        );
                     }
 
-                    if let Some(view) = &self.viewer {
-                        let gt = view.raster_handler.get_pixel_geotransform();
-                        let cur = view.state.last_cursor_pos; // Option<PlotPoint>, None when outside the plot
-
-                        // Pixel indices (floored)
-                        let px = cur.map(|p| (p.x.floor(), p.y.floor()));
-
-                        // Geo position at the pixel center, None if not georeferenced or cursor outside
-                        let geo = cur
-                            .zip(gt)
-                            .map(|(p, gt)| gt.pixel_to_geo(p.x.floor() + 0.5, p.y.floor() + 0.5));
-
-                        ui.horizontal(|ui| {
-                            ui.add(
-                                ValueBar::new()
-                                    .name("px")
-                                    .item(ValueItem::new(px.map(|p| p.0)).int())
-                                    .item(ValueItem::new(px.map(|p| p.1)).int()),
-                            );
-
-                            // Decided from metadata, not from cursor presence, so the layout stays stable.
-                            if gt.is_some() {
-                                ui.separator();
-                                ui.add(
-                                    ValueBar::new()
-                                        .name("geo")
-                                        .item(ValueItem::new(geo.map(|g| g.0)).label("E"))
-                                        .item(ValueItem::new(geo.map(|g| g.1)).label("N")),
-                                );
-                            }
-                        });
-                    }
-                });
+                    ui.add(
+                        ValueBar::new()
+                            .item(
+                                ValueItem::new(px.map(|p| p.0))
+                                    .int()
+                                    .bounds(0.0, rw as f64)
+                                    .label("X")
+                                    .unit("px"),
+                            )
+                            .item(
+                                ValueItem::new(px.map(|p| p.1))
+                                    .int()
+                                    .bounds(0.0, rh as f64)
+                                    .label("Y")
+                                    .unit("px"),
+                            )
+                            .shadowed(),
+                    );
+                }
             });
+        });
     }
 }

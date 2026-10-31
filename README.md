@@ -15,8 +15,6 @@
 * **Cube exploration**: display per pixel profiles along all bands, usefull to explore time series. ``#TODO``
 * **Raw rasters**: simulate rasters from 2D arrays on disk, given dimensions. ``#WIP``
 
-## 📖 About
-
 
 ## 📌 TODO
 
@@ -53,8 +51,6 @@
 
 ## 🔧 Installation
 
-**NEW**: GDAL dependencies is now handled by pixi, independently from any system installation.
-
 ### Rust
 
 This application builds using the Rust compiler. If you don't have rust installed, check the [Rust website](https://rust-lang.org/tools/install/).
@@ -63,7 +59,7 @@ This application builds using the Rust compiler. If you don't have rust installe
 
 This application builds against GDAL using the pixi package manager, fetching source from conda-forge. If you don't have pixi installed, check the [Pixi Website](https://pixi.prefix.dev/latest/installation/).
 
-You can either use directly the pixi commands, or launch the `pixi shell`, to have the env variables correctly set, and then use normal cargo commands. When bundling (embedding GDAL), GDAl is built from source so no need for pixi.
+You can either use directly the pixi commands, or launch the `pixi shell`, to have the environment variables correctly set, and then use normal cargo commands. When bundling (embedding GDAL), GDAL is built from source (less needs for pixi).
 
 ### Fetch the repository
 
@@ -86,7 +82,7 @@ pixi run release-native
 
 This binary bundle GDAL, and is compiled with optimization relative to your current hardware.
 
-The binary will be located in: `./target/release-native`.
+The binary will be located in: `./target/native`.
 
 ### **Advanced**: Permanent installation for the current machine with local GDAL
 
@@ -108,4 +104,4 @@ pixi run release-static
 
 This binary bundle GDAL, and is compiled with optimization for your OS.
 
-The binary will be located in: `./target/release-static`.
+The binary will be located in: `./target/static`.

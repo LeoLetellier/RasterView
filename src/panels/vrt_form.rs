@@ -1,14 +1,12 @@
-use egui::{Context, Id};
+use eframe::egui::Ui;
+use egui::Id;
 use std::path::{Path, PathBuf};
 
-use crate::{
-    Viewer,
-    app::RasterView,
-    raster::{GeoTransform, xml_vrt::*},
-};
+use crate::raster::{GeoTransform, RasterHandler, xml_vrt::*};
 
 #[derive(Default)]
-pub(crate) struct VrtFormBuffer {
+pub(crate) struct VrtRawPanel {
+    pub(crate) is_open: bool,
     pub(crate) path_buf: String,
     pub(crate) has_ndv: bool,
     pub(crate) ndv_buf: f64,
@@ -18,20 +16,19 @@ pub(crate) struct VrtFormBuffer {
     pub(crate) geotransform_buf: GeoTransform,
 }
 
-impl RasterView {
-    pub(crate) fn ui_vrt_form(&mut self, ctx: &Context) {
-        if !self.app_state.show_vrt_form {
-            return;
-        }
-
-        let form_param = &mut self.app_state.vrt_params;
-        let buf = &mut self.app_state.vrt_form;
+impl VrtRawPanel {
+    pub(crate) fn ui(
+        &mut self,
+        ui: &mut Ui,
+        vrt_params: &mut VrtParameters,
+    ) -> Option<(RasterHandler, PathBuf)> {
         let mut close_modal = false;
         let mut built: Option<VrtParameters> = None;
+        let ctx = ui.ctx();
 
-        form_param.array_path = PathBuf::from(buf.path_buf.clone());
+        vrt_params.array_path = PathBuf::from(self.path_buf.clone());
 
-        egui::Modal::new(Id::new("vrt_form")).show(ctx, |ui| {
+        egui::Modal::new(Id::unique("vrt_form")).show(ctx, |ui| {
             ui.heading("Loading raw file");
             ui.separator();
             ui.label("File could not be opened as GDAL raster.");
@@ -48,51 +45,51 @@ impl RasterView {
                         .id_salt("array_path_scroll")
                         .max_width(350.0)
                         .show(ui, |ui| {
-                            ui.label(form_param.array_path.display().to_string());
+                            ui.label(vrt_params.array_path.display().to_string());
                         });
                     ui.end_row();
 
                     // size
                     ui.label("Size (w × h)");
                     ui.horizontal(|ui| {
-                        ui.add(egui::DragValue::new(&mut form_param.size.0).range(0..=usize::MAX));
+                        ui.add(egui::DragValue::new(&mut vrt_params.size.0).range(0..=usize::MAX));
                         ui.label("×");
-                        ui.add(egui::DragValue::new(&mut form_param.size.1).range(0..=usize::MAX));
+                        ui.add(egui::DragValue::new(&mut vrt_params.size.1).range(0..=usize::MAX));
                     });
                     ui.end_row();
 
                     // band_nb
                     ui.label("Band count");
-                    ui.add(egui::DragValue::new(&mut form_param.band_nb).range(1..=usize::MAX));
+                    ui.add(egui::DragValue::new(&mut vrt_params.band_nb).range(1..=usize::MAX));
                     ui.end_row();
 
                     // image_offset
                     ui.label("Image offset (bytes)");
-                    ui.add(egui::DragValue::new(&mut form_param.image_offset));
+                    ui.add(egui::DragValue::new(&mut vrt_params.image_offset));
                     ui.end_row();
 
                     // pixel_offset
                     ui.label("Pixel offset (bytes)");
-                    ui.add(egui::DragValue::new(&mut form_param.pixel_offset));
+                    ui.add(egui::DragValue::new(&mut vrt_params.pixel_offset));
                     ui.end_row();
 
                     // interleave
                     ui.label("Interleave");
                     egui::ComboBox::from_id_salt("interleave")
-                        .selected_text(format!("{:?}", form_param.interleave))
+                        .selected_text(format!("{:?}", vrt_params.interleave))
                         .show_ui(ui, |ui| {
                             ui.selectable_value(
-                                &mut form_param.interleave,
+                                &mut vrt_params.interleave,
                                 VrtInterleave::Bsq,
                                 "BSQ",
                             );
                             ui.selectable_value(
-                                &mut form_param.interleave,
+                                &mut vrt_params.interleave,
                                 VrtInterleave::Bip,
                                 "BIP",
                             );
                             ui.selectable_value(
-                                &mut form_param.interleave,
+                                &mut vrt_params.interleave,
                                 VrtInterleave::Bil,
                                 "BIL",
                             );
@@ -102,15 +99,15 @@ impl RasterView {
                     // byte_order
                     ui.label("Byte order");
                     egui::ComboBox::from_id_salt("byte_order")
-                        .selected_text(form_param.byte_order.as_gdal_str())
+                        .selected_text(vrt_params.byte_order.as_gdal_str())
                         .show_ui(ui, |ui| {
                             ui.selectable_value(
-                                &mut form_param.byte_order,
+                                &mut vrt_params.byte_order,
                                 VrtByteOrder::Lsb,
                                 "LSB",
                             );
                             ui.selectable_value(
-                                &mut form_param.byte_order,
+                                &mut vrt_params.byte_order,
                                 VrtByteOrder::Msb,
                                 "MSB",
                             );
@@ -120,7 +117,7 @@ impl RasterView {
                     // data_type
                     ui.label("Data type");
                     egui::ComboBox::from_id_salt("data_type")
-                        .selected_text(form_param.data_type.as_gdal_str())
+                        .selected_text(vrt_params.data_type.as_gdal_str())
                         .show_ui(ui, |ui| {
                             for dt in [
                                 VrtDataType::Byte,
@@ -133,7 +130,7 @@ impl RasterView {
                                 VrtDataType::CFloat32,
                             ] {
                                 let label = dt.as_gdal_str();
-                                ui.selectable_value(&mut form_param.data_type, dt, label);
+                                ui.selectable_value(&mut vrt_params.data_type, dt, label);
                             }
                         });
                     ui.end_row();
@@ -141,10 +138,10 @@ impl RasterView {
                     // ndv — optional
                     ui.label("No-data value");
                     ui.horizontal(|ui| {
-                        ui.checkbox(&mut buf.has_ndv, "");
+                        ui.checkbox(&mut self.has_ndv, "");
                         ui.add_enabled(
-                            buf.has_ndv,
-                            egui::DragValue::new(&mut buf.ndv_buf).speed(0.1),
+                            self.has_ndv,
+                            egui::DragValue::new(&mut self.ndv_buf).speed(0.1),
                         );
                     });
                     ui.end_row();
@@ -152,19 +149,19 @@ impl RasterView {
                     // crs — optional
                     ui.label("CRS");
                     ui.horizontal(|ui| {
-                        ui.checkbox(&mut buf.has_crs, "");
-                        ui.add_enabled(buf.has_crs, egui::TextEdit::singleline(&mut buf.crs_buf));
+                        ui.checkbox(&mut self.has_crs, "");
+                        ui.add_enabled(self.has_crs, egui::TextEdit::singleline(&mut self.crs_buf));
                     });
                     ui.end_row();
 
                     // geotransform — optional
                     ui.label("Geotransform");
                     ui.horizontal(|ui| {
-                        ui.checkbox(&mut buf.has_geotransform, "");
+                        ui.checkbox(&mut self.has_geotransform, "");
                     });
                     ui.end_row();
 
-                    ui.add_enabled_ui(buf.has_geotransform, |ui| {
+                    ui.add_enabled_ui(self.has_geotransform, |ui| {
                         egui::Grid::new("geotransform_grid")
                             .num_columns(2)
                             .spacing([6.0, 4.0])
@@ -172,21 +169,21 @@ impl RasterView {
                                 let fields = [
                                     (
                                         "Origin X",
-                                        &mut buf.geotransform_buf.x_off,
+                                        &mut self.geotransform_buf.x_off,
                                         "Origin Y",
-                                        &mut buf.geotransform_buf.y_off,
+                                        &mut self.geotransform_buf.y_off,
                                     ),
                                     (
                                         "Res X",
-                                        &mut buf.geotransform_buf.x_res,
+                                        &mut self.geotransform_buf.x_res,
                                         "Res Y",
-                                        &mut buf.geotransform_buf.y_res,
+                                        &mut self.geotransform_buf.y_res,
                                     ),
                                     (
                                         "Rot X",
-                                        &mut buf.geotransform_buf.x_rot,
+                                        &mut self.geotransform_buf.x_rot,
                                         "Rot Y",
-                                        &mut buf.geotransform_buf.y_rot,
+                                        &mut self.geotransform_buf.y_rot,
                                     ),
                                 ];
                                 for (label_a, val_a, label_b, val_b) in fields {
@@ -208,9 +205,9 @@ impl RasterView {
             ui.separator();
 
             let mut error: Option<String> = None;
-            if form_param.size.0 == 0 || form_param.size.1 == 0 {
+            if vrt_params.size.0 == 0 || vrt_params.size.1 == 0 {
                 error = Some("Width and height must be non-zero.".into());
-            } else if form_param.band_nb == 0 {
+            } else if vrt_params.band_nb == 0 {
                 error = Some("Band count must be at least 1.".into());
             }
             // crs and geotransform are optional now, so no longer validated here.
@@ -225,17 +222,18 @@ impl RasterView {
                     .on_hover_text("Load raw raster with these parameters")
                     .clicked()
                 {
-                    form_param.array_path = PathBuf::from(&buf.path_buf);
-                    form_param.ndv = buf.has_ndv.then_some(buf.ndv_buf);
-                    form_param.crs = buf.has_crs.then(|| buf.crs_buf.clone());
-                    form_param.geotransform = buf.has_geotransform.then_some(buf.geotransform_buf);
-                    built = Some(std::mem::take(form_param));
+                    vrt_params.array_path = PathBuf::from(&self.path_buf);
+                    vrt_params.ndv = self.has_ndv.then_some(self.ndv_buf);
+                    vrt_params.crs = self.has_crs.then(|| self.crs_buf.clone());
+                    vrt_params.geotransform =
+                        self.has_geotransform.then_some(self.geotransform_buf);
+                    built = Some(std::mem::take(vrt_params));
                     close_modal = true;
                 }
                 if ui.button("Reset").clicked() {
-                    *form_param = Default::default();
-                    *buf = Default::default();
-                    buf.path_buf = form_param.array_path.to_string_lossy().into_owned();
+                    *vrt_params = Default::default();
+                    *self = Default::default();
+                    self.path_buf = vrt_params.array_path.to_string_lossy().into_owned();
                 }
                 if ui
                     .button("Cancel")
@@ -247,21 +245,26 @@ impl RasterView {
             });
         });
 
-        if let Some(params) = built {
+        let res = if let Some(params) = built {
             let vrt_xml = simulate_vrt_path(&params);
             // allow GDAL to reach this path on disk from vrt, only for the duration
             if allow_raw_source(params.array_path.parent().unwrap_or(Path::new("."))).is_ok() {
-                let viewer = vrt_xml
+                vrt_xml
                     .map_err(anyhow::Error::from)
-                    .and_then(|vrt| Viewer::with_raster(vrt.as_path(), ctx.clone()));
-                if let Ok(view) = viewer {
-                    self.viewer = Some(view);
-                    self.raster_path = Some(params.array_path);
-                }
+                    // TODO HARDCODED value for cache
+                    .and_then(|vrt| RasterHandler::new(vrt.as_path(), ctx.clone(), 258_000_u64))
+                    .ok()
+                    .map(|rh| (rh, params.array_path))
+            } else {
+                None
             }
-        }
+        } else {
+            None
+        };
         if close_modal {
-            self.app_state.show_vrt_form = false;
+            self.is_open = false;
         }
+
+        res
     }
 }

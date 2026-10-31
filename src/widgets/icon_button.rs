@@ -1,14 +1,12 @@
 use egui::{
-    Align2, Color32, FontId, Pos2, Rect, Response, Sense, Stroke, StrokeKind, Ui, Widget, pos2,
-    vec2,
+    Align2, Color32, Pos2, Rect, Response, Sense, Stroke, StrokeKind, Ui, Widget, pos2, vec2,
 };
 
-use super::{fill_family, regular_family};
+use super::phosphor::Icon;
 
 /// Button with a phosphor icon and numerous customization
 pub struct IconButton {
-    icon: &'static str,
-    fill_icon: Option<&'static str>,
+    icon: Icon,
     selected: bool,
     size: Option<f32>,
     icon_size: Option<f32>,
@@ -56,10 +54,9 @@ pub struct IconButtonColors {
 
 impl IconButton {
     /// Create a new button from a Phosphor icon and a state (selected)
-    pub fn new(icon: &'static str, selected: bool) -> Self {
+    pub fn new(icon: impl Into<Icon>, selected: bool) -> Self {
         Self {
-            icon,
-            fill_icon: None,
+            icon: icon.into(),
             selected,
             size: None,
             icon_size: None,
@@ -74,7 +71,7 @@ impl IconButton {
 
     /// Phosphor *fill* glyph shown while selected, e.g. `icon::fill::GEAR`.
     pub fn fill(mut self, icon: &'static str) -> Self {
-        self.fill_icon = Some(icon);
+        self.icon = self.icon.with_fill(icon);
         self
     }
 
@@ -190,17 +187,13 @@ impl Widget for IconButton {
         }
 
         // displaying the phosphor icon
-        let (glyph, family) = match (self.selected, self.fill_icon) {
-            (true, Some(fill)) => (fill, fill_family()),
-            _ => (self.icon, regular_family()),
-        };
         let icon_size = icon_size * (1.0 - 0.08 * press_t);
 
         painter.text(
             rect.center(),
             Align2::CENTER_CENTER,
-            glyph,
-            FontId::new(icon_size, family),
+            self.icon.resolve(self.selected).0,
+            self.icon.font_id(icon_size, self.selected),
             icon_color,
         );
 

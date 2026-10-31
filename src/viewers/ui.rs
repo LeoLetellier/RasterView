@@ -1,5 +1,6 @@
 use std::ops::RangeInclusive;
 
+use crate::raster::RasterHandler;
 use crate::viewers::coords::Bbox;
 use crate::viewers::tiler::TileDescriptor;
 use crate::{panels::parameters::Settings, viewers::Viewer};
@@ -7,24 +8,29 @@ use egui::Ui;
 use egui_plot::{GridInput, GridMark, Plot, PlotBounds, PlotPoint, PlotPoints, PlotUi, Polygon};
 
 impl Viewer {
-    pub(crate) fn ui(&mut self, ui: &mut Ui, settings: &Settings) {
+    pub(crate) fn ui(
+        &mut self,
+        ui: &mut Ui,
+        raster_handler: &mut RasterHandler,
+        settings: &Settings,
+    ) {
         if cfg!(debug_assertions) {
             let context_count = ui.ctx().tex_manager().read().allocated().count();
             tracing::trace!("Context count: {}", context_count);
         }
 
         if self.parameters.auto_load_band_stats {
-            self.raster_handler.preload_band_stats();
+            raster_handler.preload_band_stats();
         }
 
-        let tiles_needed = self.need_tiles();
+        let tiles_needed = self.need_tiles(raster_handler);
 
         let last_view_center = self.state.last_bounds.map(|lb| lb.center());
         let tiles = tiles_needed
             .clone()
             .zip(last_view_center)
             .and_then(|(tn, lvc)| {
-                self.raster_handler
+                raster_handler
                     .request_cache_tiles(&tn, lvc, self.view_mode.clone())
                     .ok()
             });
@@ -33,7 +39,7 @@ impl Viewer {
         let mut last_bounds = None;
         let mut last_screen_size = None;
 
-        let raster_size = self.raster_handler.raster_size();
+        let raster_size = raster_handler.raster_size();
         // Avoid crash viewport padding <= 0.5 (min max crossed)
         let vpad = settings.viewport_padding.max(0.6);
 
@@ -122,7 +128,7 @@ impl Viewer {
         };
 
         if let Some(cpp) = cursor_plot_pos {
-            let cpp = PlotPoint::new(cpp.x, self.raster_handler.raster_size().1 as f64 - cpp.y);
+            let cpp = PlotPoint::new(cpp.x, raster_handler.raster_size().1 as f64 - cpp.y);
             self.state.last_cursor_pos = Some(cpp)
         }
     }

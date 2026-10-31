@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use egui::{
-    Align, Color32, FontId, Galley, Response, Sense, TextFormat, TextStyle, Ui, Widget,
-    text::LayoutJob, vec2,
+    Align, Color32, FontId, Frame, Galley, Margin, Response, Sense, Shadow, Stroke, TextFormat,
+    TextStyle, Ui, Widget, text::LayoutJob, vec2,
 };
 
 /// Flow of the elements (the first element is on the named side).
@@ -21,6 +21,19 @@ impl Direction {
     fn reversed(self) -> bool {
         matches!(self, Self::RightToLeft | Self::BottomToTop)
     }
+}
+
+/// Background decoration, useful to tell side-by-side bars apart.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Backdrop {
+    /// Nothing (default).
+    None,
+    /// Border only.
+    Frame,
+    /// Filled background + border.
+    Panel,
+    /// Filled background + border + drop shadow.
+    Shadow,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -110,7 +123,8 @@ impl ValueItem {
     }
     /// Small unit after the value (e.g. "m").
     pub fn unit(mut self, u: impl Into<String>) -> Self {
-        self.unit = Some(u.into());
+        let u = u.into();
+        self.unit = if u.is_empty() { None } else { Some(u) };
         self
     }
     pub fn repr(mut self, r: Repr) -> Self {
@@ -237,6 +251,11 @@ pub struct ValueBar {
     clickable: bool,
     show_tooltip: bool,
     copied_time: f64,
+    backdrop: Backdrop,
+    padding: i8,
+    corner_radius: u8,
+    backdrop_fill: Option<Color32>,
+    backdrop_stroke: Option<Color32>,
 }
 
 impl ValueBar {
@@ -254,6 +273,11 @@ impl ValueBar {
             clickable: true,
             show_tooltip: true,
             copied_time: 1.5,
+            backdrop: Backdrop::None,
+            padding: 4,
+            corner_radius: 4,
+            backdrop_fill: None,
+            backdrop_stroke: None,
         }
     }
 
@@ -318,6 +342,41 @@ impl ValueBar {
         self.copied_time = secs;
         self
     }
+    pub fn backdrop(mut self, b: Backdrop) -> Self {
+        self.backdrop = b;
+        self
+    }
+    /// Shortcut for `Backdrop::Frame`.
+    pub fn framed(self) -> Self {
+        self.backdrop(Backdrop::Frame)
+    }
+    /// Shortcut for `Backdrop::Panel`.
+    pub fn panel(self) -> Self {
+        self.backdrop(Backdrop::Panel)
+    }
+    /// Shortcut for `Backdrop::Shadow`.
+    pub fn shadowed(self) -> Self {
+        self.backdrop(Backdrop::Shadow)
+    }
+    /// Inner margin between the backdrop and the content (points).
+    pub fn padding(mut self, p: i8) -> Self {
+        self.padding = p;
+        self
+    }
+    pub fn corner_radius(mut self, r: u8) -> Self {
+        self.corner_radius = r;
+        self
+    }
+    /// Override the backdrop fill color (Panel / Shadow).
+    pub fn backdrop_fill(mut self, c: Color32) -> Self {
+        self.backdrop_fill = Some(c);
+        self
+    }
+    /// Override the border color.
+    pub fn backdrop_stroke(mut self, c: Color32) -> Self {
+        self.backdrop_stroke = Some(c);
+        self
+    }
 
     /// Unrounded values, `None` if any is missing.
     fn copy_string(&self) -> Option<String> {
@@ -332,16 +391,8 @@ impl ValueBar {
         }
         (!parts.is_empty()).then(|| parts.join(", "))
     }
-}
 
-impl Default for ValueBar {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Widget for ValueBar {
-    fn ui(self, ui: &mut Ui) -> Response {
+    fn content_ui(self, ui: &mut Ui) -> Response {
         // Measure
         let size = self
             .font_size
@@ -483,6 +534,43 @@ impl Widget for ValueBar {
                 ui.weak("Click to copy");
             }
         })
+    }
+}
+
+impl Default for ValueBar {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Widget for ValueBar {
+    fn ui(self, ui: &mut Ui) -> Response {
+        if self.backdrop == Backdrop::None {
+            return self.content_ui(ui);
+        }
+
+        let v = ui.visuals();
+        let stroke_c = self
+            .backdrop_stroke
+            .unwrap_or(v.widgets.noninteractive.bg_stroke.color);
+        let mut frame = Frame::NONE
+            .inner_margin(Margin::same(self.padding))
+            .corner_radius(self.corner_radius)
+            .stroke(Stroke::new(1.0, stroke_c));
+
+        if matches!(self.backdrop, Backdrop::Panel | Backdrop::Shadow) {
+            frame = frame.fill(self.backdrop_fill.unwrap_or(v.faint_bg_color));
+        }
+        if self.backdrop == Backdrop::Shadow {
+            frame = frame.shadow(Shadow {
+                offset: [2, 3],
+                blur: 8,
+                spread: 0,
+                color: Color32::from_black_alpha(if v.dark_mode { 140 } else { 60 }),
+            });
+        }
+
+        frame.show(ui, |ui| self.content_ui(ui)).inner
     }
 }
 

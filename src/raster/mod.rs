@@ -24,7 +24,7 @@ pub(crate) struct RasterHandler {
     path: String,
     pub(crate) src_metadata: SourceMetadata,
     gdal_dataset: Dataset,
-    raster_metadata: RasterMetadata,
+    pub(crate) raster_metadata: RasterMetadata,
     texture_worker: TextureWorker,
     texture_cache: TextureCache,
     on_screen_texture_retainer: HashSet<Tile>,
@@ -45,6 +45,10 @@ impl RasterHandler {
 
     pub(crate) fn raster_path(&self) -> &String {
         &self.path
+    }
+
+    pub(crate) fn raster_size(&self) -> (usize, usize) {
+        self.raster_metadata.size
     }
 
     pub(crate) fn is_single_band(&self) -> bool {
@@ -178,6 +182,7 @@ pub(crate) struct RasterMetadata {
     pub(crate) size: (usize, usize),
     pub(crate) band_nb: usize,
     pub(crate) projection: String,
+    pub(crate) crs_kind: CrsKind,
     pub(crate) geotransform: GeoTransform,
     pub(crate) bbox: Option<GeoBox>,
     pub(crate) bands: Vec<BandMetadata>,
@@ -202,16 +207,40 @@ impl RasterMetadata {
             })
             .collect::<Result<Vec<_>>>()?;
 
+        let crs_kind = dataset.spatial_ref().ok().map_or(CrsKind::Unknown, |s| {
+            if s.is_projected() {
+                CrsKind::Projected
+            } else if s.is_geographic() {
+                CrsKind::Geographic
+            } else {
+                CrsKind::Unknown
+            }
+        });
+
         Ok(RasterMetadata {
             driver: dataset.driver().short_name(),
             description: dataset.description()?,
             size,
             band_nb: dataset.raster_count(),
             projection: dataset.projection(),
+            crs_kind,
             geotransform,
             bbox,
             bands,
         })
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub(crate) enum CrsKind {
+    Geographic,
+    Projected,
+    Unknown,
+}
+
+impl Default for CrsKind {
+    fn default() -> Self {
+        CrsKind::Unknown
     }
 }
 

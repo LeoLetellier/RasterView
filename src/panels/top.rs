@@ -1,8 +1,10 @@
 use crate::RasterView;
 use crate::icon;
 use crate::raster::loading::build_pyramid;
-use egui::{RichText, Ui};
+use egui::Ui;
 use std::cell::Cell;
+
+use crate::widgets::phosphor::IconText;
 
 enum MenuAction {
     Refresh,
@@ -24,30 +26,52 @@ impl RasterView {
         let mut left_end_x = 0.0_f32;
         let mut right_start_x = f32::MAX;
 
+        let can_ask_ovr = !self
+            .raster_handler
+            .as_ref()
+            .is_some_and(|rh| rh.has_all_overviews(self.viewer.parameters.tile_size));
+
         egui::MenuBar::new().ui(ui, |ui| {
             egui::Sides::new().shrink_left().truncate().show(
                 ui,
                 // ---------- LEFT: menus ----------
                 |ui| {
-                    ui.menu_button(".", |ui| {
-                        if ui.button("Parameters").clicked() {
-                            self.app_state.settings_panel.is_open = true;
+                    ui.menu_button(IconText::new().icon(icon::regular::LIST).build(ui), |ui| {
+                        if ui
+                            .button(
+                                IconText::new()
+                                    .icon(icon::regular::GEAR)
+                                    .gap(6.0)
+                                    .text("Settings")
+                                    .build(ui),
+                            )
+                            .clicked()
+                        {
+                            self.panels.settings_panel.is_open = true;
                         }
                         if ui.button("About").clicked() {}
                     });
 
-                    ui.menu_button("Open", |ui| {
+                    ui.menu_button("File", |ui| {
                         if ui
-                            .button("GDAL raster")
+                            .button("Open GDAL")
                             .on_hover_text("Select a raster file")
                             .clicked()
                             && let Some(path) = rfd::FileDialog::new().pick_file()
                         {
                             picked_path = Some(path);
                         }
-                        if ui.button("REAL4 raster").clicked() {}
-                        if ui.button("AMSTer raster").clicked() {}
-                        if ui.button("Raw raster").clicked() {}
+                        if ui.button("Open REAL4").clicked() {}
+                        if ui.button("Open AMSTer").clicked() {}
+                        if ui.button("Open Raw").clicked() {}
+                        ui.separator();
+                        if ui
+                            .add_enabled(can_ask_ovr, egui::Button::new("Generate pyramid"))
+                            .clicked()
+                        {
+                            menu_action.set(Some(MenuAction::BuildPyramid));
+                        }
+                        if ui.button("Build VRT").clicked() {}
                     });
 
                     ui.menu_button("View", |ui| {
@@ -62,119 +86,29 @@ impl RasterView {
                         }
                     });
 
-                    ui.menu_button("Raster", |ui| {
-                        if ui.button("Generate pyramid").clicked() {
-                            menu_action.set(Some(MenuAction::BuildPyramid));
-                        }
-                        if ui.button("Build VRT").clicked() {}
-                    });
-
                     left_end_x = ui.min_rect().right();
                 },
                 // ---------- RIGHT: controls (added right-to-left) ----------
                 |ui| {
                     // Light/Dark mode switch
-                    egui::widgets::global_theme_preference_switch(ui);
-
-                    // GDAL pyramid
-                    if let Some(view) = &mut self.viewer {
-                        let has_overviews = view
-                            .raster_handler
-                            .has_all_overviews(view.parameters.tile_size);
-
-                        // Poll any in-flight pyramid build first
-                        if let Some(promise) = &self.app_state.pyramid_promise
-                            && let Some(result) = promise.ready()
-                        {
-                            match result {
-                                Ok(()) => {
-                                    let _ = view.raster_handler.refresh_dataset_only();
-                                }
-                                Err(e) => {
-                                    eprintln!("pyramid build failed: {e:?}");
-                                }
-                            }
-                            self.app_state.pyramid_promise = None;
-                        }
-
-                        if self.app_state.pyramid_promise.is_some() {
-                            ui.add(egui::Spinner::new())
-                                .on_hover_text("Building GDAL pyramid…");
-                        } else {
-                            let button = ui
-                                .add_enabled(
-                                    !has_overviews,
-                                    egui::Button::new(RichText::new(icon::regular::TORNADO)),
-                                )
-                                .on_hover_text(if has_overviews {
-                                    "Overviews already available"
-                                } else {
-                                    "Generate GDAL pyramid"
-                                });
-
-                            if button.clicked() {
-                                let local_dataset = view.raster_handler.as_owned_dataset();
-                                let tile_size = view.parameters.tile_size;
-
-                                if let Ok(mut ds) = local_dataset {
-                                    self.app_state.pyramid_promise =
-                                        Some(poll_promise::Promise::spawn_thread(
-                                            "build_pyramid",
-                                            move || {
-                                                build_pyramid(&mut ds, "AVERAGE", tile_size)
-                                                    .map_err(anyhow::Error::from)
-                                            },
-                                        ));
-                                }
-                            }
-                        }
-                    }
-
-                    // Refresh button
-                    let button_response = ui.button("Refresh").on_hover_text("Refresh cache");
-                    if button_response.clicked()
-                        && let Some(view) = &mut self.viewer
-                    {
-                        view.refresh_cache();
-                    }
-                    button_response.context_menu(|ui| {
-                        if ui
-                            .button("Reload")
-                            .on_hover_text("Reload the file and reset the viewer")
-                            .clicked()
-                        {
-                            menu_action.set(Some(MenuAction::Reload));
-                            ui.close();
-                        }
-
-                        if ui
-                            .button("Unload")
-                            .on_hover_text("Unload current raster")
-                            .clicked()
-                        {
-                            menu_action.set(Some(MenuAction::Close));
-                            ui.close();
-                        }
-                    });
+                    egui::widgets::global_theme_preference_buttons(ui);
 
                     // Loading spinner
-                    if let Some(view) = &self.viewer {
-                        let loading = &view.state.background_loading;
+                    let loading = &self.viewer.state.background_loading;
 
-                        if loading.any_loading() {
-                            let mut items = Vec::new();
-                            if loading.loading_tile {
-                                items.push("tile");
-                            }
-                            if loading.loading_stat {
-                                items.push("stat");
-                            }
-                            let message = format!("Loading: {}", items.join(", "));
-                            ui.add(egui::Spinner::new()).on_hover_text(message);
-                        } else {
-                            ui.label(egui::RichText::from(icon::regular::CHECK_FAT))
-                                .on_hover_text("Nothing to load");
+                    if loading.any_loading() {
+                        let mut items = Vec::new();
+                        if loading.loading_tile {
+                            items.push("tile");
                         }
+                        if loading.loading_stat {
+                            items.push("stat");
+                        }
+                        let message = format!("Loading: {}", items.join(", "));
+                        ui.add(egui::Spinner::new()).on_hover_text(message);
+                    } else {
+                        ui.label(egui::RichText::from(icon::regular::CHECK_FAT))
+                            .on_hover_text("Nothing to load");
                     }
 
                     right_start_x = ui.min_rect().left();
@@ -182,7 +116,7 @@ impl RasterView {
             );
 
             // ---------- CENTER: file name, only when a raster is loaded ----------
-            if let Some(path) = &self.raster_path {
+            if let Some(path) = &self.app_state.raster_path {
                 let full = ui.max_rect();
                 let center_x = full.center().x;
                 let gap = 8.0;
@@ -250,28 +184,26 @@ impl RasterView {
 
         match menu_action.take() {
             Some(MenuAction::Reload) => {
-                if let Some(path) = self.raster_path.clone() {
+                if let Some(path) = self.app_state.raster_path.clone() {
                     let _ = self.update_path_force(path.as_path(), ctx.clone());
                 }
             }
             Some(MenuAction::Close) => {
-                self.raster_path = None;
-                self.viewer = None;
+                self.app_state.raster_path = None;
+                self.raster_handler = None;
             }
             Some(MenuAction::Reveal) => {
-                if let Some(path) = &self.raster_path {
+                if let Some(path) = &self.app_state.raster_path {
                     reveal_in_file_manager(path);
                 }
             }
             Some(MenuAction::Refresh) => {
-                if let Some(view) = &mut self.viewer {
-                    view.refresh_cache();
-                }
+                todo!()
             }
             Some(MenuAction::BuildPyramid) => {
-                if let Some(view) = &mut self.viewer {
-                    let local_dataset = view.raster_handler.as_owned_dataset();
-                    let tile_size = view.parameters.tile_size;
+                if let Some(rh) = &mut self.raster_handler {
+                    let local_dataset = rh.as_owned_dataset();
+                    let tile_size = self.viewer.parameters.tile_size;
 
                     if let Ok(mut ds) = local_dataset {
                         self.app_state.pyramid_promise = Some(poll_promise::Promise::spawn_thread(

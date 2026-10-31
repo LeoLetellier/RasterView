@@ -1,10 +1,12 @@
 use anyhow::Result;
+use eframe::egui::Ui;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use crate::panels::LeftPanel;
+use crate::panels::CommandPanel;
 use crate::panels::parameters::{Settings, SettingsPanel};
-use crate::panels::vrt_form::VrtFormBuffer;
+use crate::panels::vrt_form::VrtRawPanel;
+use crate::raster::RasterHandler;
 use crate::raster::xml_vrt::VrtParameters;
 use crate::viewers::Viewer;
 use crate::widgets::install_phosphor;
@@ -15,29 +17,33 @@ type TracingHandle = reload::Handle<EnvFilter, Registry>;
 
 const SETTINGS_KEY: &str = "settings";
 
-/// The structure containing the whole rview app
-///
-/// # Example
-///
-/// ```rs
-/// let ctx = cc.egui_ctx.clone();
-/// let app = RasterView::new(ctx);
-/// ```
+/// Application Handler
 pub(crate) struct RasterView {
-    pub(crate) raster_path: Option<PathBuf>,
-    pub(crate) viewer: Option<Viewer>,
-    pub(crate) left_panel_open: bool,
-    pub(crate) left_panel: LeftPanel,
+    /// Access to the current raster
+    pub(crate) raster_handler: Option<RasterHandler>,
+    /// Access to the viewer
+    pub(crate) viewer: Viewer,
+    /// All possible panels and their state
+    pub(crate) panels: Panels,
+    /// Global app state
     pub(crate) app_state: AppState,
+    /// Global app settings
+    pub(crate) settings: Settings,
+}
+
+pub(crate) struct Panels {
+    /// Left panels for metadata and view config
+    pub(crate) command_panel: CommandPanel,
+    /// Popup for loading raw rasters
+    pub(crate) vrt_raw_panel: VrtRawPanel,
+    /// Popup for all settings
+    pub(crate) settings_panel: SettingsPanel,
 }
 
 pub(crate) struct AppState {
+    pub(crate) raster_path: Option<PathBuf>,
     pub(crate) pyramid_promise: Option<poll_promise::Promise<Result<()>>>,
-    pub(crate) show_vrt_form: bool,
     pub(crate) vrt_params: VrtParameters,
-    pub(crate) vrt_form: VrtFormBuffer,
-    pub(crate) settings: Settings,
-    pub(crate) settings_panel: SettingsPanel,
     pub(crate) tracing_handle: TracingHandle,
 }
 
@@ -51,19 +57,15 @@ impl Default for AppState {
     fn default() -> Self {
         let tracing_handle = init_logging_once(false);
         Self {
+            raster_path: None,
             pyramid_promise: Default::default(),
-            show_vrt_form: Default::default(),
             vrt_params: Default::default(),
-            vrt_form: Default::default(),
-            settings: Default::default(),
-            settings_panel: Default::default(),
             tracing_handle,
         }
     }
 }
 
 // Handle for tracing logging
-
 fn build_filter(verbose: bool) -> EnvFilter {
     EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         EnvFilter::new(if verbose {
@@ -100,25 +102,27 @@ impl RasterView {
     ///
     /// Need the egui context to register custom icons from phosphoricons
     pub(crate) fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        let _ctx = cc.egui_ctx.clone();
-
-        let mut app_state = AppState::default();
-        if let Some(storage) = cc.storage
-            && let Some(settings) = eframe::get_value::<Settings>(storage, SETTINGS_KEY) {
-                app_state.settings = settings;
-            }
+        let panels = Panels {
+            command_panel: CommandPanel::default(),
+            vrt_raw_panel: VrtRawPanel::default(),
+            settings_panel: SettingsPanel::default(),
+        };
+        let settings = cc
+            .storage
+            .and_then(|s| eframe::get_value::<Settings>(s, SETTINGS_KEY))
+            .unwrap_or_default();
 
         Self {
-            raster_path: Default::default(),
-            viewer: Default::default(),
-            left_panel_open: true,
-            left_panel: LeftPanel::Palette,
-            app_state,
+            raster_handler: None,
+            viewer: Viewer::default(),
+            panels: panels,
+            app_state: AppState::default(),
+            settings,
         }
     }
 
     pub(crate) fn update_path(&mut self, new_path: &Path, ctx: egui::Context) -> Result<()> {
-        if let Some(path) = &self.raster_path {
+        if let Some(path) = &self.app_state.raster_path {
             // Check if we really got new raster
             if path == new_path {
                 // Nothing to do, early return
@@ -132,40 +136,49 @@ impl RasterView {
             tracing::info!("Asking update path > first loading file");
         }
 
-        let viewer = Viewer::with_raster(new_path, ctx.clone());
-        if let Ok(view) = viewer {
-            self.viewer = Some(view);
-            self.raster_path = Some(new_path.into());
+        // TODO cache size param instead of hardcoded
+        let raster_handler = RasterHandler::new(new_path, ctx, 256 * 1024 * 1024);
+
+        self.raster_handler = raster_handler.ok();
+
+        if self.raster_handler.is_none() {
+            self.panels.vrt_raw_panel.is_open = true;
+            self.panels.vrt_raw_panel.path_buf = new_path.to_string_lossy().into_owned();
         } else {
-            self.app_state.show_vrt_form = true;
-            self.app_state.vrt_form.path_buf = new_path.to_string_lossy().into_owned();
+            self.app_state.raster_path = Some(new_path.into());
         }
+
         Ok(())
     }
 
     pub(crate) fn update_path_force(&mut self, new_path: &Path, ctx: egui::Context) -> Result<()> {
-        if self.raster_path.is_some() {
-            self.viewer = Some(Viewer::with_raster(new_path, ctx)?);
-        } else {
-            // First raster to initialize
-            self.viewer = Some(Viewer::with_raster(new_path, ctx)?);
-        }
-
-        self.raster_path = Some(new_path.into());
+        self.raster_handler = Some(RasterHandler::new(new_path, ctx, 256 * 1024 * 1024)?);
+        self.app_state.raster_path = Some(new_path.into());
         Ok(())
     }
 }
 
 impl eframe::App for RasterView {
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
-        eframe::set_value(storage, SETTINGS_KEY, &self.app_state.settings);
+        eframe::set_value(storage, SETTINGS_KEY, &self.settings);
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         // Vrt form
-        self.ui_vrt_form(ui.ctx());
+        if self.panels.vrt_raw_panel.is_open {
+            let raw_res = self
+                .panels
+                .vrt_raw_panel
+                .ui(ui, &mut self.app_state.vrt_params);
+            if let Some((rh, buf)) = raw_res {
+                self.raster_handler = Some(rh);
+                self.app_state.raster_path = Some(buf);
+            }
+        }
+        // Parameters
+        self.panels.settings_panel.ui(ui, &mut self.settings);
 
-        if self.app_state.settings.show_theme_panel && cfg!(debug_assertions) {
+        if self.settings.show_theme_panel && cfg!(debug_assertions) {
             ui.ctx().show_viewport_immediate(
                 egui::ViewportId::from_hash_of("style_editor"),
                 egui::ViewportBuilder::default()
@@ -203,34 +216,24 @@ impl eframe::App for RasterView {
             self.ui_bottom_panel(ui);
         });
 
-        if self.raster_path.is_some() {
-            // Show the viewer when a raster is loaded
-
-            // Show left panel is toggled
-            let mut is_open = self.left_panel_open;
+        if self.raster_handler.is_some() {
+            let mut is_open = self.panels.command_panel.is_open;
             egui::Panel::left("left panel")
                 .min_size(250.0)
                 .max_size(ui.ctx().content_rect().width() * 0.50)
                 .show_collapsible(ui, &mut is_open, |ui| {
                     egui::ScrollArea::both().show(ui, |ui| {
-                        self.ui_left_panel(ui);
+                        self.panels.command_panel.ui(
+                            ui,
+                            &mut self.viewer,
+                            &mut self.raster_handler,
+                        );
                     });
                 });
 
-            // // Show right panel if toggled
-            // let mut is_open = self.right_panel_open;
-            // egui::Panel::right("right panel")
-            //     .max_size(ui.ctx().content_rect().width() * 0.33)
-            //     .show_collapsible(ui, &mut is_open, |ui| {
-            //         egui::ScrollArea::both().show(ui, |ui| {
-            //             self.ui_right_panel(ui);
-            //         });
-            //     });
-
-            // Lastly show the view at the center
             egui::CentralPanel::default().show(ui, |ui| {
-                if let Some(view) = &mut self.viewer {
-                    view.ui(ui, &self.app_state.settings);
+                if let Some(rh) = &mut self.raster_handler {
+                    self.viewer.ui(ui, rh, &self.settings);
                 }
             });
         } else {

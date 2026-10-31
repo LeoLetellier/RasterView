@@ -1,209 +1,194 @@
 use crate::raster::source_metadata::SourceMetadata;
+use crate::raster::{RasterHandler, RasterMetadata};
 use crate::widgets::info_card::{InfoCard, InfoCardGrid};
 use crate::widgets::inspector::{Field, Inspector};
-use crate::{RasterView, raster::BandMetadata, viewers::coords::Bbox};
+use crate::{raster::BandMetadata, viewers::coords::Bbox};
 use egui::{Color32, RichText, Ui};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-impl RasterView {
-    pub(crate) fn ui_metadata_panel(&mut self, ui: &mut Ui) {
-        ui.heading("Raster Information");
+pub(crate) fn ui_metadata_panel(ui: &mut Ui, raster_handler: &RasterHandler) {
+    ui.heading("Raster Information");
+    ui.separator();
+    ui_source(ui, &raster_handler.src_metadata);
+    ui_dataset(ui, &raster_handler.raster_metadata);
+    ui_bands(ui, raster_handler.raster_metadata.bands.iter());
+}
+
+pub(crate) fn ui_dataset(ui: &mut Ui, raster_metadata: &RasterMetadata) {
+    let driver = &raster_metadata.driver;
+    let size = raster_metadata.size;
+    let band_nb = raster_metadata.band_nb;
+    let projection = &raster_metadata.projection;
+    let geotransform = &raster_metadata.geotransform;
+    let bbox = raster_metadata.bbox;
+
+    ui.vertical(|ui| {
+        ui.heading("Dataset");
         ui.separator();
-        self.ui_source(ui);
-        self.ui_dataset(ui);
-        self.ui_bands(ui);
-    }
 
-    pub(crate) fn ui_dataset(&mut self, ui: &mut Ui) {
-        let Some(view) = &self.viewer else {
-            return;
-        };
-        let rh = &view.raster_handler;
-        let metadata = rh.metadata();
-        let driver = &metadata.driver;
-        let size = metadata.size;
-        let band_nb = metadata.band_nb;
-        let projection = &metadata.projection;
-        let geotransform = &metadata.geotransform;
-        let bbox = metadata.bbox;
+        InfoCardGrid::new().max_cols(4).show(
+            ui,
+            vec![
+                InfoCard::new("Driver", driver).tint(Color32::LIGHT_BLUE),
+                InfoCard::new("Bands", band_nb),
+                InfoCard::new("Width", size.0).unit("px"),
+                InfoCard::new("Height", size.1).unit("px"),
+            ],
+        );
 
-        ui.vertical(|ui| {
-            ui.heading("Dataset");
-            ui.separator();
+        ui.separator();
 
-            InfoCardGrid::new().max_cols(4).show(
-                ui,
-                vec![
-                    InfoCard::new("Driver", driver).tint(Color32::LIGHT_BLUE),
-                    InfoCard::new("Bands", band_nb),
-                    InfoCard::new("Width", size.0).unit("px"),
-                    InfoCard::new("Height", size.1).unit("px"),
-                ],
-            );
+        let gt = geotransform;
+        let offsets = gt.offsets();
+        let resolutions = gt.resolutions();
+        let rotations = gt.rotations();
 
-            ui.separator();
-
-            let gt = geotransform;
-            let offsets = gt.offsets();
-            let resolutions = gt.resolutions();
-            let rotations = gt.rotations();
-
-            Inspector::new("raster_inspector")
-                .label_width(0.35)
-                .show(ui, |ins| {
-                    ins.section("Description", |ins| ins.description(&metadata.description));
-
-                    ins.section("Dimensions", |ins| {
-                        ins.text("Width (X)", size.0);
-                        ins.text("Height (Y)", size.1);
-                        ins.text("Bands (Z)", band_nb);
-                    });
-
-                    ins.section("Projection", |ins| {
-                        ins.text("CRS", projection.to_string());
-                    });
-
-                    ins.section("Geotransform", |ins| {
-                        ins.header_row(&["X", "Y"]);
-                        ins.props("Offset", [Field::value(offsets.x), Field::value(offsets.y)]);
-                        ins.props(
-                            "Resolution",
-                            [Field::value(resolutions.x), Field::value(resolutions.y)],
-                        );
-                        ins.props(
-                            "Rotation",
-                            [Field::value(rotations.x), Field::value(rotations.y)],
-                        );
-                    });
-
-                    if let Some(bb) = bbox {
-                        ins.section("Bounding Box", |ins| {
-                            ins.props(
-                                "X",
-                                [
-                                    Field::value(format_decimal(bb.xmin())).named("Min"),
-                                    Field::value(format_decimal(bb.xmax())).named("Max"),
-                                ],
-                            );
-                            ins.props(
-                                "Y",
-                                [
-                                    Field::value(format_decimal(bb.ymin())).named("Min"),
-                                    Field::value(format_decimal(bb.ymax())).named("Max"),
-                                ],
-                            );
-                        });
-                    }
+        Inspector::new("raster_inspector")
+            .label_width(0.35)
+            .show(ui, |ins| {
+                ins.section("Description", |ins| {
+                    ins.description(&raster_metadata.description)
                 });
-        });
-    }
 
-    fn ui_source(&self, ui: &mut Ui) {
-        let Some(view) = &self.viewer else {
-            return;
-        };
-        let rh = &view.raster_handler;
-        let src = &rh.src_metadata;
+                ins.section("Dimensions", |ins| {
+                    ins.text("Width (X)", size.0);
+                    ins.text("Height (Y)", size.1);
+                    ins.text("Bands (Z)", band_nb);
+                });
 
-        Inspector::new("raster_info")
-            .label_width(0.22)
-            .min_label_width(70.0)
-            .monospace_values(true)
-            .show(ui, |ins| match &src {
-                SourceMetadata::File(f) => {
-                    ins.prop("File", Field::value(&f.name).tooltip(f.name.clone()));
-                    ins.text("Extension", f.extension.as_deref().unwrap_or("-"));
-                    ins.prop(
-                        "Size",
-                        Field::value(human_size(f.size)).tooltip(format!("{} bytes", f.size)),
+                ins.section("Projection", |ins| {
+                    ins.text("CRS", projection.to_string());
+                });
+
+                ins.section("Geotransform", |ins| {
+                    ins.header_row(&["X", "Y"]);
+                    ins.props("Offset", [Field::value(offsets.x), Field::value(offsets.y)]);
+                    ins.props(
+                        "Resolution",
+                        [Field::value(resolutions.x), Field::value(resolutions.y)],
                     );
+                    ins.props(
+                        "Rotation",
+                        [Field::value(rotations.x), Field::value(rotations.y)],
+                    );
+                });
 
-                    ins.section("Attributes", |ins| {
-                        ins.flag("Symlink", f.is_symlink);
-                        ins.flag("Read-only", f.readonly);
-                        ins.flag("Hidden", f.hidden);
-                        if let Some(m) = f.mode {
-                            ins.text("Mode", format!("{m:03o}"));
-                        }
+                if let Some(bb) = bbox {
+                    ins.section("Bounding Box", |ins| {
+                        ins.props(
+                            "X",
+                            [
+                                Field::value(format_decimal(bb.xmin())).named("Min"),
+                                Field::value(format_decimal(bb.xmax())).named("Max"),
+                            ],
+                        );
+                        ins.props(
+                            "Y",
+                            [
+                                Field::value(format_decimal(bb.ymin())).named("Min"),
+                                Field::value(format_decimal(bb.ymax())).named("Max"),
+                            ],
+                        );
                     });
-
-                    ins.section("Timestamps", |ins| {
-                        ins.text("Modified", fmt_time(f.modified));
-                        ins.text("Created", fmt_time(f.created));
-                        ins.text("Accessed", fmt_time(f.accessed));
-                    });
-                }
-                SourceMetadata::Vrt(v) => {
-                    ins.text("Source", "In-memory VRT");
-                    ins.text("VSI path", &v.vsi_path);
                 }
             });
-    }
+    });
+}
 
-    pub(crate) fn ui_bands(&self, ui: &mut Ui) {
-        let Some(view) = &self.viewer else {
-            return;
-        };
-        let rh = &view.raster_handler;
-        let metadata = rh.metadata();
-        ui.vertical(|ui| {
-            ui.heading("Bands");
-            ui.separator();
+fn ui_source(ui: &mut Ui, source_metadata: &SourceMetadata) {
+    Inspector::new("raster_info")
+        .label_width(0.22)
+        .min_label_width(70.0)
+        .monospace_values(true)
+        .show(ui, |ins| match &source_metadata {
+            SourceMetadata::File(f) => {
+                ins.prop("File", Field::value(&f.name).tooltip(f.name.clone()));
+                ins.text("Extension", f.extension.as_deref().unwrap_or("-"));
+                ins.prop(
+                    "Size",
+                    Field::value(human_size(f.size)).tooltip(format!("{} bytes", f.size)),
+                );
 
-            for (idx, band) in metadata.bands.iter().enumerate() {
-                let band_label = if band.description.is_empty() {
-                    format!("Band {}", idx + 1)
-                } else {
-                    format!("Band {}: {}", idx + 1, band.description)
-                };
-                ui.collapsing(band_label, |ui| {
-                    self.ui_band(band, ui);
+                ins.section("Attributes", |ins| {
+                    ins.flag("Symlink", f.is_symlink);
+                    ins.flag("Read-only", f.readonly);
+                    ins.flag("Hidden", f.hidden);
+                    if let Some(m) = f.mode {
+                        ins.text("Mode", format!("{m:03o}"));
+                    }
+                });
+
+                ins.section("Timestamps", |ins| {
+                    ins.text("Modified", fmt_time(f.modified));
+                    ins.text("Created", fmt_time(f.created));
+                    ins.text("Accessed", fmt_time(f.accessed));
+                });
+            }
+            SourceMetadata::Vrt(v) => {
+                ins.text("Source", "In-memory VRT");
+                ins.text("VSI path", &v.vsi_path);
+            }
+        });
+}
+
+pub(crate) fn ui_bands<'a>(ui: &mut Ui, bands_metadata: impl Iterator<Item = &'a BandMetadata>) {
+    ui.vertical(|ui| {
+        ui.heading("Bands");
+        ui.separator();
+
+        for (idx, band) in bands_metadata.enumerate() {
+            let band_label = if band.description.is_empty() {
+                format!("Band {}", idx + 1)
+            } else {
+                format!("Band {}: {}", idx + 1, band.description)
+            };
+            ui.collapsing(band_label, |ui| {
+                ui_band(ui, band);
+            });
+        }
+    });
+}
+
+fn ui_band(ui: &mut Ui, band: &BandMetadata) {
+    Inspector::new("band_info")
+        .label_width(0.35)
+        .min_label_width(80.0)
+        .monospace_values(true)
+        .show(ui, |ins| {
+            if !band.description.is_empty() {
+                ins.text("Description", &band.description);
+            }
+
+            ins.text("Data Type", &band.dtype);
+
+            if !band.unit.is_empty() {
+                ins.text("Unit", &band.unit);
+            }
+            if let Some(v) = band.ndv {
+                ins.text("No Data Value", v);
+            }
+            if let Some(v) = band.scale {
+                ins.text("Scale", v);
+            }
+            if let Some(v) = band.offset {
+                ins.text("Offset", v);
+            }
+
+            if !band.overviews.is_empty() {
+                ins.section("Overviews", |ins| {
+                    ins.header_row(&["Width", "Height"]);
+                    for ovr in &band.overviews {
+                        ins.props(
+                            format!("Level {}", ovr[0]),
+                            [
+                                Field::value(ovr[1]).suffix(" px"),
+                                Field::value(ovr[2]).suffix(" px"),
+                            ],
+                        );
+                    }
                 });
             }
         });
-    }
-
-    fn ui_band(&self, band: &BandMetadata, ui: &mut Ui) {
-        Inspector::new("band_info")
-            .label_width(0.35)
-            .min_label_width(80.0)
-            .monospace_values(true)
-            .show(ui, |ins| {
-                if !band.description.is_empty() {
-                    ins.text("Description", &band.description);
-                }
-
-                ins.text("Data Type", &band.dtype);
-
-                if !band.unit.is_empty() {
-                    ins.text("Unit", &band.unit);
-                }
-                if let Some(v) = band.ndv {
-                    ins.text("No Data Value", v);
-                }
-                if let Some(v) = band.scale {
-                    ins.text("Scale", v);
-                }
-                if let Some(v) = band.offset {
-                    ins.text("Offset", v);
-                }
-
-                if !band.overviews.is_empty() {
-                    ins.section("Overviews", |ins| {
-                        ins.header_row(&["Width", "Height"]);
-                        for ovr in &band.overviews {
-                            ins.props(
-                                format!("Level {}", ovr[0]),
-                                [
-                                    Field::value(ovr[1]).suffix(" px"),
-                                    Field::value(ovr[2]).suffix(" px"),
-                                ],
-                            );
-                        }
-                    });
-                }
-            });
-    }
 }
 
 fn human_size(bytes: u64) -> String {

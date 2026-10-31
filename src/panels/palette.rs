@@ -1,3 +1,4 @@
+use crate::raster::RasterHandler;
 use crate::viewers::cmap::{ColorMap, ColorMapType, DbMode};
 use crate::viewers::{ActiveViewer, ColorRanging, CpxMode};
 use crate::{RasterView, viewers::Viewer};
@@ -14,246 +15,241 @@ const COMMON_CMAPS: &[&str] = &[
     "scm/romaO",
 ];
 
-impl RasterView {
-    pub(crate) fn ui_palette_panel(&mut self, ui: &mut Ui) {
-        let Some(view) = &mut self.viewer else {
-            return;
-        };
-        let old_view = view.view_mode.clone();
+pub(crate) fn ui_palette_panel(
+    ui: &mut Ui,
+    viewer: &mut Viewer,
+    raster_handler: &mut RasterHandler,
+) {
+    let old_view = viewer.view_mode.clone();
 
-        ui.add_space(6.0);
-        ui.heading("View settings");
-        ui.add_space(10.0);
+    ui.add_space(6.0);
+    ui.heading("View settings");
+    ui.add_space(10.0);
 
-        // VIEWMODE
-        ui.columns(3, |cols| {
-            let panchro_selected = view.view_mode.active_viewer == ActiveViewer::Band;
-            let color_selected = view.view_mode.active_viewer == ActiveViewer::Color;
-            let index_selected = view.view_mode.active_viewer == ActiveViewer::Index;
+    // VIEWMODE
+    ui.columns(3, |cols| {
+        let panchro_selected = viewer.view_mode.active_viewer == ActiveViewer::Band;
+        let color_selected = viewer.view_mode.active_viewer == ActiveViewer::Color;
+        let index_selected = viewer.view_mode.active_viewer == ActiveViewer::Index;
 
-            if big_mode_button(&mut cols[0], "Band", panchro_selected) {
-                view.view_mode.active_viewer = ActiveViewer::Band;
+        if big_mode_button(&mut cols[0], "Band", panchro_selected) {
+            viewer.view_mode.active_viewer = ActiveViewer::Band;
+        }
+        if big_mode_button(&mut cols[1], "RGB", color_selected) {
+            viewer.view_mode.active_viewer = ActiveViewer::Color;
+        }
+        if big_mode_button(&mut cols[2], "Index", index_selected) {
+            todo!()
+        }
+    });
+
+    ui.add_space(14.0);
+
+    // BANDS
+    section_frame(ui, "Bands", |ui| {
+        let band_count = raster_handler.raster_count();
+        match viewer.view_mode.active_viewer {
+            ActiveViewer::Band => {
+                ui_band_combo(ui, "Band", &mut viewer.view_mode.panchro_band, band_count);
             }
-            if big_mode_button(&mut cols[1], "RGB", color_selected) {
-                view.view_mode.active_viewer = ActiveViewer::Color;
-            }
-            if big_mode_button(&mut cols[2], "Index", index_selected) {
-                todo!()
-            }
-        });
-
-        ui.add_space(14.0);
-
-        // BANDS
-        section_frame(ui, "Bands", |ui| {
-            let band_count = view.raster_handler.raster_count();
-            match view.view_mode.active_viewer {
-                ActiveViewer::Band => {
-                    ui_band_combo(ui, "Band", &mut view.view_mode.panchro_band, band_count);
-                }
-                ActiveViewer::Color => {
-                    egui::Grid::new("rgb_band_grid")
-                        .num_columns(2)
-                        .spacing([12.0, 8.0])
-                        .show(ui, |ui| {
-                            ui.colored_label(egui::Color32::from_rgb(230, 90, 90), "● R");
-                            ui_band_combo_bare(
-                                ui,
-                                "r_band",
-                                &mut view.view_mode.rgb_bands.0,
-                                band_count,
-                            );
-                            ui.end_row();
-
-                            ui.colored_label(egui::Color32::from_rgb(90, 200, 90), "● G");
-                            ui_band_combo_bare(
-                                ui,
-                                "g_band",
-                                &mut view.view_mode.rgb_bands.1,
-                                band_count,
-                            );
-                            ui.end_row();
-
-                            ui.colored_label(egui::Color32::from_rgb(90, 140, 230), "● B");
-                            ui_band_combo_bare(
-                                ui,
-                                "b_band",
-                                &mut view.view_mode.rgb_bands.2,
-                                band_count,
-                            );
-                            ui.end_row();
-                        });
-                }
-                ActiveViewer::Index => todo!(),
-            }
-
-            let reference_band = match view.view_mode.active_viewer {
-                ActiveViewer::Band => view.view_mode.panchro_band,
-                ActiveViewer::Color => view.view_mode.rgb_bands.0,
-                ActiveViewer::Index => todo!(),
-            };
-            if view.raster_handler.band_is_complex(reference_band) {
-                ui.add_space(8.0);
-                ui.separator();
-                ui.add_space(8.0);
-                ui.label(egui::RichText::new("Complex component").small().weak());
-                ui.add_space(2.0);
-                ui.horizontal_wrapped(|ui| {
-                    for mode in [
-                        CpxMode::Combined,
-                        CpxMode::Amplitude,
-                        CpxMode::WrappedPhase,
-                        CpxMode::Real,
-                        CpxMode::Imaginary,
-                    ] {
-                        ui.selectable_value(
-                            &mut view.view_mode.cpx_mode,
-                            mode,
-                            cpx_mode_label(mode),
+            ActiveViewer::Color => {
+                egui::Grid::new("rgb_band_grid")
+                    .num_columns(2)
+                    .spacing([12.0, 8.0])
+                    .show(ui, |ui| {
+                        ui.colored_label(egui::Color32::from_rgb(230, 90, 90), "● R");
+                        ui_band_combo_bare(
+                            ui,
+                            "r_band",
+                            &mut viewer.view_mode.rgb_bands.0,
+                            band_count,
                         );
-                    }
-                });
+                        ui.end_row();
+
+                        ui.colored_label(egui::Color32::from_rgb(90, 200, 90), "● G");
+                        ui_band_combo_bare(
+                            ui,
+                            "g_band",
+                            &mut viewer.view_mode.rgb_bands.1,
+                            band_count,
+                        );
+                        ui.end_row();
+
+                        ui.colored_label(egui::Color32::from_rgb(90, 140, 230), "● B");
+                        ui_band_combo_bare(
+                            ui,
+                            "b_band",
+                            &mut viewer.view_mode.rgb_bands.2,
+                            band_count,
+                        );
+                        ui.end_row();
+                    });
             }
-        });
+            ActiveViewer::Index => todo!(),
+        }
 
-        ui.add_space(14.0);
-
-        // CMAPS
-        if view.view_mode.active_viewer != ActiveViewer::Color {
-            section_frame(ui, "Colormap", |ui| {
-                ui_cmap_combo(ui, &mut view.view_mode.color_interpretation.colormap);
-                ui.add_space(8.0);
-
-                // Full-width preview, much bigger than the tiny row swatch
-                let full_width = ui.available_width();
-                let (OrderedFloat(left_bound), OrderedFloat(right_bound)) =
-                    view.view_mode.color_interpretation.ranging_values;
-                cmap_preview_swatch(
-                    ui,
-                    &view.view_mode.color_interpretation.colormap,
-                    egui::vec2(full_width, 22.0),
-                    view.view_mode.color_interpretation.invert_cmap,
-                    Some((left_bound, right_bound)),
-                );
-
-                ui.add_space(10.0);
-                ui.horizontal(|ui| {
-                    ui.checkbox(
-                        &mut view.view_mode.color_interpretation.invert_cmap,
-                        "Invert",
-                    );
-                    ui.add_space(16.0);
-                    egui::ComboBox::from_label("dB scale")
-                        .selected_text(match view.view_mode.color_interpretation.db_mode {
-                            DbMode::None => "None",
-                            DbMode::Intensity => "Intensity (10·log10)",
-                            DbMode::Amplitude => "Amplitude (20·log10)",
-                        })
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(
-                                &mut view.view_mode.color_interpretation.db_mode,
-                                DbMode::None,
-                                "None",
-                            )
-                            .on_hover_text("raw");
-                            ui.selectable_value(
-                                &mut view.view_mode.color_interpretation.db_mode,
-                                DbMode::Intensity,
-                                "Intensity",
-                            )
-                            .on_hover_text("10·log10");
-                            ui.selectable_value(
-                                &mut view.view_mode.color_interpretation.db_mode,
-                                DbMode::Amplitude,
-                                "Amplitude  ",
-                            )
-                            .on_hover_text("20·log10");
-                        });
-                });
+        let reference_band = match viewer.view_mode.active_viewer {
+            ActiveViewer::Band => viewer.view_mode.panchro_band,
+            ActiveViewer::Color => viewer.view_mode.rgb_bands.0,
+            ActiveViewer::Index => todo!(),
+        };
+        if raster_handler.band_is_complex(reference_band) {
+            ui.add_space(8.0);
+            ui.separator();
+            ui.add_space(8.0);
+            ui.label(egui::RichText::new("Complex component").small().weak());
+            ui.add_space(2.0);
+            ui.horizontal_wrapped(|ui| {
+                for mode in [
+                    CpxMode::Combined,
+                    CpxMode::Amplitude,
+                    CpxMode::WrappedPhase,
+                    CpxMode::Real,
+                    CpxMode::Imaginary,
+                ] {
+                    ui.selectable_value(&mut viewer.view_mode.cpx_mode, mode, cpx_mode_label(mode));
+                }
             });
         }
+    });
 
-        ui.add_space(14.0);
+    ui.add_space(14.0);
 
-        // NORMALIZATION
-        section_frame(ui, "Value range", |ui| {
-            egui::ComboBox::from_id_salt("ranging_mode")
-                .width(ui.available_width())
-                .selected_text(ranging_mode_label(&view.view_mode.ranging_mode))
-                .show_ui(ui, |ui| {
-                    for mode in [
-                        ColorRanging::MinMax,
-                        ColorRanging::Percentile,
-                        ColorRanging::Manual,
-                    ] {
+    // CMAPS
+    if viewer.view_mode.active_viewer != ActiveViewer::Color {
+        section_frame(ui, "Colormap", |ui| {
+            ui_cmap_combo(ui, &mut viewer.view_mode.color_interpretation.colormap);
+            ui.add_space(8.0);
+
+            // Full-width preview, much bigger than the tiny row swatch
+            let full_width = ui.available_width();
+            let (OrderedFloat(left_bound), OrderedFloat(right_bound)) =
+                viewer.view_mode.color_interpretation.ranging_values;
+            cmap_preview_swatch(
+                ui,
+                &viewer.view_mode.color_interpretation.colormap,
+                egui::vec2(full_width, 22.0),
+                viewer.view_mode.color_interpretation.invert_cmap,
+                Some((left_bound, right_bound)),
+            );
+
+            ui.add_space(10.0);
+            ui.horizontal(|ui| {
+                ui.checkbox(
+                    &mut viewer.view_mode.color_interpretation.invert_cmap,
+                    "Invert",
+                );
+                ui.add_space(16.0);
+                egui::ComboBox::from_label("dB scale")
+                    .selected_text(match viewer.view_mode.color_interpretation.db_mode {
+                        DbMode::None => "None",
+                        DbMode::Intensity => "Intensity (10·log10)",
+                        DbMode::Amplitude => "Amplitude (20·log10)",
+                    })
+                    .show_ui(ui, |ui| {
                         ui.selectable_value(
-                            &mut view.view_mode.ranging_mode,
-                            mode.clone(),
-                            ranging_mode_label(&mode),
-                        );
+                            &mut viewer.view_mode.color_interpretation.db_mode,
+                            DbMode::None,
+                            "None",
+                        )
+                        .on_hover_text("raw");
+                        ui.selectable_value(
+                            &mut viewer.view_mode.color_interpretation.db_mode,
+                            DbMode::Intensity,
+                            "Intensity",
+                        )
+                        .on_hover_text("10·log10");
+                        ui.selectable_value(
+                            &mut viewer.view_mode.color_interpretation.db_mode,
+                            DbMode::Amplitude,
+                            "Amplitude  ",
+                        )
+                        .on_hover_text("20·log10");
+                    });
+            });
+        });
+    }
+
+    ui.add_space(14.0);
+
+    // NORMALIZATION
+    section_frame(ui, "Value range", |ui| {
+        egui::ComboBox::from_id_salt("ranging_mode")
+            .width(ui.available_width())
+            .selected_text(ranging_mode_label(&viewer.view_mode.ranging_mode))
+            .show_ui(ui, |ui| {
+                for mode in [
+                    ColorRanging::MinMax,
+                    ColorRanging::Percentile,
+                    ColorRanging::Manual,
+                ] {
+                    ui.selectable_value(
+                        &mut viewer.view_mode.ranging_mode,
+                        mode.clone(),
+                        ranging_mode_label(&mode),
+                    );
+                }
+            });
+
+        ui.add_space(10.0);
+
+        match &viewer.view_mode.ranging_mode {
+            ColorRanging::MinMax => {
+                let (OrderedFloat(min), OrderedFloat(max)) =
+                    viewer.view_mode.color_interpretation.ranging_values;
+                ui.horizontal(|ui| {
+                    stat_pill(ui, "min", min);
+                    stat_pill(ui, "max", max);
+                });
+            }
+            ColorRanging::Percentile => {
+                let mut clip = viewer
+                    .view_mode
+                    .color_interpretation
+                    .percentile_clip
+                    .into_inner();
+                if ui
+                    .add(
+                        egui::Slider::new(&mut clip, 0.0..=20.0)
+                            .text("Clip")
+                            .suffix("%"),
+                    )
+                    .changed()
+                {
+                    viewer.view_mode.color_interpretation.percentile_clip = OrderedFloat(clip);
+                }
+            }
+            ColorRanging::Manual => {
+                let (min_of, max_of) = viewer.view_mode.color_interpretation.ranging_values;
+                let mut min = min_of.into_inner();
+                let mut max = max_of.into_inner();
+
+                ui.horizontal(|ui| {
+                    ui.label("min");
+                    let r_min = ui.add(
+                        egui::DragValue::new(&mut min).speed(1.0), // tune to your data's typical scale
+                    );
+
+                    ui.label("max");
+                    let r_max = ui.add(egui::DragValue::new(&mut max).speed(1.0));
+
+                    // Only ordering is enforced — no numeric bounds at all.
+                    if r_min.changed() && min > max {
+                        max = min;
+                    }
+                    if r_max.changed() && max < min {
+                        min = max;
                     }
                 });
 
-            ui.add_space(10.0);
-
-            match &view.view_mode.ranging_mode {
-                ColorRanging::MinMax => {
-                    let (OrderedFloat(min), OrderedFloat(max)) =
-                        view.view_mode.color_interpretation.ranging_values;
-                    ui.horizontal(|ui| {
-                        stat_pill(ui, "min", min);
-                        stat_pill(ui, "max", max);
-                    });
-                }
-                ColorRanging::Percentile => {
-                    let mut clip = view
-                        .view_mode
-                        .color_interpretation
-                        .percentile_clip
-                        .into_inner();
-                    if ui
-                        .add(
-                            egui::Slider::new(&mut clip, 0.0..=20.0)
-                                .text("Clip")
-                                .suffix("%"),
-                        )
-                        .changed()
-                    {
-                        view.view_mode.color_interpretation.percentile_clip = OrderedFloat(clip);
-                    }
-                }
-                ColorRanging::Manual => {
-                    let (min_of, max_of) = view.view_mode.color_interpretation.ranging_values;
-                    let mut min = min_of.into_inner();
-                    let mut max = max_of.into_inner();
-
-                    ui.horizontal(|ui| {
-                        ui.label("min");
-                        let r_min = ui.add(
-                            egui::DragValue::new(&mut min).speed(1.0), // tune to your data's typical scale
-                        );
-
-                        ui.label("max");
-                        let r_max = ui.add(egui::DragValue::new(&mut max).speed(1.0));
-
-                        // Only ordering is enforced — no numeric bounds at all.
-                        if r_min.changed() && min > max {
-                            max = min;
-                        }
-                        if r_max.changed() && max < min {
-                            min = max;
-                        }
-                    });
-
-                    view.view_mode.color_interpretation.ranging_values =
-                        (OrderedFloat(min), OrderedFloat(max));
-                }
+                viewer.view_mode.color_interpretation.ranging_values =
+                    (OrderedFloat(min), OrderedFloat(max));
             }
-        });
-
-        if old_view != view.view_mode {
-            view.update_view();
         }
+    });
+
+    if old_view != viewer.view_mode {
+        viewer.update_view(raster_handler);
     }
 }
 
@@ -342,6 +338,7 @@ fn ranging_mode_label(mode: &ColorRanging) -> &'static str {
 pub(crate) fn ui_cmap_combo(ui: &mut Ui, colormap: &mut ColorMap) {
     egui::ComboBox::from_label("Cmap:")
         .selected_text(colormap.name())
+        .height(250.0)
         .show_ui(ui, |ui| {
             for &name in COMMON_CMAPS {
                 select_cmap_entry(ui, colormap, name, name);
@@ -483,13 +480,12 @@ fn cmap_preview_swatch(
 }
 
 impl Viewer {
-    fn update_view(&mut self) {
-        self.raster_handler
-            .refresh_cache(self.parameters.cache_size);
+    fn update_view(&mut self, raster_handler: &mut RasterHandler) {
+        raster_handler.refresh_cache(self.parameters.cache_size);
     }
 
-    fn _load_minmax(&mut self) {
-        let minmax = self.raster_handler.band_minmax(self.view_mode.panchro_band);
+    fn _load_minmax(&mut self, raster_handler: &mut RasterHandler) {
+        let minmax = raster_handler.band_minmax(self.view_mode.panchro_band);
         if let Some((min, max)) = minmax {
             let new_range = (min as f32, max as f32);
             self.view_mode

@@ -2,20 +2,10 @@ use std::cell::Cell;
 
 use eframe::egui::{
     self, Align, Align2, Button, Color32, ComboBox, CornerRadius, CursorIcon, DragValue, FontId,
-    Id, Layout, Modal, Rect, Response, RichText, ScrollArea, Sense, TextEdit, Ui,
-    UiBuilder, Vec2, pos2, vec2,
+    Id, Layout, Modal, Rect, Response, RichText, ScrollArea, Sense, TextEdit, Ui, UiBuilder, Vec2,
+    pos2, vec2,
 };
 use serde::{Deserialize, Serialize};
-
-use crate::RasterView;
-
-impl RasterView {
-    pub(crate) fn ui_parameters(&mut self, ui: &mut Ui) -> bool {
-        self.app_state
-            .settings_panel
-            .show(&ui.ctx().clone(), &mut self.app_state.settings)
-    }
-}
 
 const ACCENT: Color32 = Color32::from_rgb(90, 140, 255);
 const ROW_H: f32 = 52.0;
@@ -24,6 +14,26 @@ const ROW_H: f32 = 52.0;
 pub(crate) enum Resampling {
     Nearest,
     Bilinear,
+}
+
+pub(crate) struct SettingsPanel {
+    active: Section,
+    pending: Option<Section>,
+    locked: Option<(Section, f64)>, // (target, unlock deadline)
+    query: String,
+    pub(crate) is_open: bool,
+}
+
+impl Default for SettingsPanel {
+    fn default() -> Self {
+        Self {
+            active: Section::Viewer,
+            pending: None,
+            locked: None,
+            query: String::new(),
+            is_open: false,
+        }
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -77,6 +87,208 @@ impl Default for Settings {
             show_frame_rate: is_debug,
             verbose_logs: is_debug,
         }
+    }
+}
+
+impl SettingsPanel {
+    pub(crate) fn ui(&mut self, ui: &mut Ui, settings: &mut Settings) -> bool {
+        let open = self.is_open;
+        let ctx = ui.ctx();
+        // Fade in/out
+        let currently_open = open.to_owned();
+        let t = ctx.animate_bool_with_time(Id::unique("settings_fade"), currently_open, 0.12);
+        if t == 0.0 && !currently_open {
+            return false;
+        }
+
+        let d = Settings::default();
+        let size = (ctx.content_rect().size() * 0.75).min(Vec2::new(900.0, 640.0));
+        let now = ctx.input(|i| i.time);
+
+        let form = Form {
+            query: self.query.to_lowercase(),
+            scroll_to: self.pending.take(),
+            dry: Cell::new(false),
+            hits: Cell::new(0),
+            drawn: Cell::new(0),
+            current: Cell::new(None),
+            first: Cell::new(None),
+        };
+        if let Some(target) = form.scroll_to {
+            self.locked = Some((target, now + 1.0));
+            self.active = target;
+        }
+
+        let mut clicked: Option<Section> = None;
+
+        let modal = Modal::new(Id::new("settings_modal")).show(ctx, |ui| {
+            ui.set_opacity(t);
+            ui.set_max_size(size);
+            ui.horizontal_top(|ui| {
+                // ── Left rail ──
+                ui.allocate_ui(vec2(160.0, size.y), |ui| {
+                    ui.set_width(160.0);
+                    ui.add_space(4.0);
+                    ui.vertical(|ui| {
+                        for sec in Section::ALL {
+                            if rail_item(ui, sec.label(), self.active == sec).clicked() {
+                                clicked = Some(sec);
+                            }
+                        }
+                    });
+                });
+                ui.separator();
+
+                // ── Right: search + scrolling page ──
+                ui.vertical(|ui| {
+                    ui.add(
+                        TextEdit::singleline(&mut self.query)
+                            .hint_text("Search settings…")
+                            .desired_width(f32::INFINITY),
+                    );
+                    ui.add_space(4.0);
+
+                    ScrollArea::vertical()
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            form.section(ui, Section::App, |f, ui| {
+                                f.row(
+                                    ui,
+                                    "Auto-resolve REAL4",
+                                    "Resolve REAL4 files automatically (lect.in and .rsc headers).",
+                                    &mut settings.autoresolve_real4,
+                                    &d.autoresolve_real4,
+                                    toggle,
+                                );
+                                f.row(
+                                    ui,
+                                    "Auto-resolve AMSTER",
+                                    "Resolve AMSTER files automatically (AMSTer Engine TextFile headers).",
+                                    &mut settings.autoresolve_amster,
+                                    &d.autoresolve_amster,
+                                    toggle,
+                                );
+                            });
+
+                            form.section(ui, Section::Viewer, |f, ui| {
+                                f.row(
+                                    ui,
+                                    "Resampling",
+                                    "Interpolation used when zooming.",
+                                    &mut settings.resampling,
+                                    &d.resampling,
+                                    |ui, v| {
+                                        combo(
+                                            ui,
+                                            "resampling",
+                                            v,
+                                            &[
+                                                (Resampling::Nearest, "Nearest"),
+                                                (Resampling::Bilinear, "Bilinear"),
+                                            ],
+                                        )
+                                    },
+                                );
+                                f.row(ui, "Tile size", "Tile size on screen.", &mut settings.tile_size, &d.tile_size, |ui, v| {
+                                    ui.add(DragValue::new(v).range(64..=2048).suffix(" pixels"))
+                                });
+                                f.row(ui, "Viewport padding", "Ratio between the viewport size and the raster at default zoom level.", &mut settings.viewport_padding, &d.viewport_padding, |ui, v| {
+                                    ui.add(DragValue::new(v).range(1.0..=3.0).speed(0.1))
+                                });
+                            });
+
+                            form.section(ui, Section::Cache, |f, ui| {
+                                f.row(
+                                    ui,
+                                    "Cache size",
+                                    "Upper memory bound.",
+                                    &mut settings.cache_mb,
+                                    &d.cache_mb,
+                                    |ui, v| {
+                                        ui.add(DragValue::new(v).range(64..=8192).suffix(" MB"))
+                                    },
+                                );
+                                f.row(
+                                    ui,
+                                    "Preload stats",
+                                    "Compute statistics ahead of time.",
+                                    &mut settings.preload_stats,
+                                    &d.preload_stats,
+                                    toggle,
+                                );
+                            });
+
+                            form.section(ui, Section::Debug, |f, ui| {
+                                f.row(
+                                    ui,
+                                    "Show tiles",
+                                    "Draw tile boundaries.",
+                                    &mut settings.show_tiles,
+                                    &d.show_tiles,
+                                    toggle,
+                                );
+                                if cfg!(debug_assertions) {
+                                    f.row(
+                                        ui,
+                                        "Theme panel",
+                                        "Show the theme editor panel.",
+                                        &mut settings.show_theme_panel,
+                                        &d.show_theme_panel,
+                                        toggle,
+                                    );
+                                }
+                                f.row(
+                                    ui,
+                                    "Frame rate",
+                                    "Show frame timings on screen.",
+                                    &mut settings.show_frame_rate,
+                                    &d.show_frame_rate,
+                                    toggle,
+                                );
+                                // `row` returns true when the value changed (including via "reset"),
+                                // which is where you'd hook `set_verbose` later.
+                                let _verbose_changed = f.row(
+                                    ui,
+                                    "Verbose logs",
+                                    "",
+                                    &mut settings.verbose_logs,
+                                    &d.verbose_logs,
+                                    toggle,
+                                );
+                            });
+
+                            if form.drawn.get() == 0 {
+                                ui.add_space(24.0);
+                                ui.label(RichText::new("No matching settings").weak());
+                            }
+                            ui.add_space(size.y * 0.6); // lets the last section reach the top
+                        });
+                });
+            });
+        });
+
+        // Scroll-spy with lock after rail clicks
+        if let Some((target, deadline)) = self.locked {
+            if form.current.get() == Some(target) || now > deadline {
+                self.locked = None;
+            } else {
+                self.active = target;
+            }
+        }
+        if self.locked.is_none()
+            && let Some(cur) = form.current.get().or(form.first.get())
+        {
+            self.active = cur;
+        }
+
+        if clicked.is_some() {
+            self.pending = clicked;
+            ctx.request_repaint();
+        }
+        if modal.should_close() {
+            self.is_open = false;
+        }
+        self.is_open
     }
 }
 
@@ -292,227 +504,5 @@ impl Form {
             }
         }
         changed
-    }
-}
-
-// ───────────────────────── Panel ─────────────────────────
-
-pub(crate) struct SettingsPanel {
-    active: Section,
-    pending: Option<Section>,
-    locked: Option<(Section, f64)>, // (target, unlock deadline)
-    query: String,
-    pub(crate) is_open: bool,
-}
-
-impl Default for SettingsPanel {
-    fn default() -> Self {
-        Self {
-            active: Section::Viewer,
-            pending: None,
-            locked: None,
-            query: String::new(),
-            is_open: false,
-        }
-    }
-}
-
-impl SettingsPanel {
-    fn show(&mut self, ctx: &egui::Context, s: &mut Settings) -> bool {
-        let open = self.is_open;
-        // Fade in/out
-        let currently_open = open.to_owned();
-        let t = ctx.animate_bool_with_time(Id::new("settings_fade"), currently_open, 0.12);
-        if t == 0.0 && !currently_open {
-            return false;
-        }
-
-        let d = Settings::default();
-        let size = (ctx.content_rect().size() * 0.75).min(Vec2::new(900.0, 640.0));
-        let now = ctx.input(|i| i.time);
-
-        let form = Form {
-            query: self.query.to_lowercase(),
-            scroll_to: self.pending.take(),
-            dry: Cell::new(false),
-            hits: Cell::new(0),
-            drawn: Cell::new(0),
-            current: Cell::new(None),
-            first: Cell::new(None),
-        };
-        if let Some(target) = form.scroll_to {
-            self.locked = Some((target, now + 1.0));
-            self.active = target;
-        }
-
-        let mut clicked: Option<Section> = None;
-
-        let modal = Modal::new(Id::new("settings_modal")).show(ctx, |ui| {
-            ui.set_opacity(t);
-            ui.set_max_size(size);
-            ui.horizontal_top(|ui| {
-                // ── Left rail ──
-                ui.allocate_ui(vec2(160.0, size.y), |ui| {
-                    ui.set_width(160.0);
-                    ui.add_space(4.0);
-                    ui.vertical(|ui| {
-                        for sec in Section::ALL {
-                            if rail_item(ui, sec.label(), self.active == sec).clicked() {
-                                clicked = Some(sec);
-                            }
-                        }
-                    });
-                });
-                ui.separator();
-
-                // ── Right: search + scrolling page ──
-                ui.vertical(|ui| {
-                    ui.add(
-                        TextEdit::singleline(&mut self.query)
-                            .hint_text("Search settings…")
-                            .desired_width(f32::INFINITY),
-                    );
-                    ui.add_space(4.0);
-
-                    ScrollArea::vertical()
-                        .auto_shrink([false, false])
-                        .show(ui, |ui| {
-                            form.section(ui, Section::App, |f, ui| {
-                                f.row(
-                                    ui,
-                                    "Auto-resolve REAL4",
-                                    "Resolve REAL4 files automatically (lect.in and .rsc headers).",
-                                    &mut s.autoresolve_real4,
-                                    &d.autoresolve_real4,
-                                    toggle,
-                                );
-                                f.row(
-                                    ui,
-                                    "Auto-resolve AMSTER",
-                                    "Resolve AMSTER files automatically (AMSTer Engine TextFile headers).",
-                                    &mut s.autoresolve_amster,
-                                    &d.autoresolve_amster,
-                                    toggle,
-                                );
-                            });
-
-                            form.section(ui, Section::Viewer, |f, ui| {
-                                f.row(
-                                    ui,
-                                    "Resampling",
-                                    "Interpolation used when zooming.",
-                                    &mut s.resampling,
-                                    &d.resampling,
-                                    |ui, v| {
-                                        combo(
-                                            ui,
-                                            "resampling",
-                                            v,
-                                            &[
-                                                (Resampling::Nearest, "Nearest"),
-                                                (Resampling::Bilinear, "Bilinear"),
-                                            ],
-                                        )
-                                    },
-                                );
-                                f.row(ui, "Tile size", "Tile size on screen.", &mut s.tile_size, &d.tile_size, |ui, v| {
-                                    ui.add(DragValue::new(v).range(64..=2048).suffix(" pixels"))
-                                });
-                                f.row(ui, "Viewport padding", "Ratio between the viewport size and the raster at default zoom level.", &mut s.viewport_padding, &d.viewport_padding, |ui, v| {
-                                    ui.add(DragValue::new(v).range(1.0..=3.0).speed(0.1))
-                                });
-                            });
-
-                            form.section(ui, Section::Cache, |f, ui| {
-                                f.row(
-                                    ui,
-                                    "Cache size",
-                                    "Upper memory bound.",
-                                    &mut s.cache_mb,
-                                    &d.cache_mb,
-                                    |ui, v| {
-                                        ui.add(DragValue::new(v).range(64..=8192).suffix(" MB"))
-                                    },
-                                );
-                                f.row(
-                                    ui,
-                                    "Preload stats",
-                                    "Compute statistics ahead of time.",
-                                    &mut s.preload_stats,
-                                    &d.preload_stats,
-                                    toggle,
-                                );
-                            });
-
-                            form.section(ui, Section::Debug, |f, ui| {
-                                f.row(
-                                    ui,
-                                    "Show tiles",
-                                    "Draw tile boundaries.",
-                                    &mut s.show_tiles,
-                                    &d.show_tiles,
-                                    toggle,
-                                );
-                                if cfg!(debug_assertions) {
-                                    f.row(
-                                        ui,
-                                        "Theme panel",
-                                        "Show the theme editor panel.",
-                                        &mut s.show_theme_panel,
-                                        &d.show_theme_panel,
-                                        toggle,
-                                    );
-                                }
-                                f.row(
-                                    ui,
-                                    "Frame rate",
-                                    "Show frame timings on screen.",
-                                    &mut s.show_frame_rate,
-                                    &d.show_frame_rate,
-                                    toggle,
-                                );
-                                // `row` returns true when the value changed (including via "reset"),
-                                // which is where you'd hook `set_verbose` later.
-                                let _verbose_changed = f.row(
-                                    ui,
-                                    "Verbose logs",
-                                    "",
-                                    &mut s.verbose_logs,
-                                    &d.verbose_logs,
-                                    toggle,
-                                );
-                            });
-
-                            if form.drawn.get() == 0 {
-                                ui.add_space(24.0);
-                                ui.label(RichText::new("No matching settings").weak());
-                            }
-                            ui.add_space(size.y * 0.6); // lets the last section reach the top
-                        });
-                });
-            });
-        });
-
-        // Scroll-spy with lock after rail clicks
-        if let Some((target, deadline)) = self.locked {
-            if form.current.get() == Some(target) || now > deadline {
-                self.locked = None;
-            } else {
-                self.active = target;
-            }
-        }
-        if self.locked.is_none()
-            && let Some(cur) = form.current.get().or(form.first.get()) {
-                self.active = cur;
-            }
-
-        if clicked.is_some() {
-            self.pending = clicked;
-            ctx.request_repaint();
-        }
-        if modal.should_close() {
-            self.is_open = false;
-        }
-        self.is_open
     }
 }

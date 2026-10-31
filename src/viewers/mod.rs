@@ -1,9 +1,5 @@
-use anyhow::Result;
-use egui_plot::{PlotBounds, PlotPoint};
-use std::path::Path;
-
-use crate::raster::RasterHandler;
 use cmap::ColorInterpretation;
+use egui_plot::{PlotBounds, PlotPoint};
 
 pub(crate) mod cmap;
 pub(crate) mod coords;
@@ -15,10 +11,8 @@ pub(crate) mod ui;
 /// Core of the raster viewer / visualization
 ///
 /// It holds both the cache and the user input parameters
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(crate) struct Viewer {
-    /// Actual raster
-    pub(crate) raster_handler: RasterHandler,
     /// View handler
     pub(crate) view_mode: ViewMode,
     /// User parameters for the viewer
@@ -92,25 +86,6 @@ pub(crate) struct BgLoading {
 impl BgLoading {
     pub(crate) fn any_loading(&self) -> bool {
         self.loading_stat || self.loading_tile
-    }
-}
-
-impl Viewer {
-    pub(crate) fn with_raster(path: &Path, ctx: egui::Context) -> Result<Self> {
-        let parameters = ViewerParams::default();
-        let raster_handler = RasterHandler::new(path, ctx, parameters.cache_size)?;
-
-        Ok(Self {
-            raster_handler,
-            view_mode: Default::default(),
-            parameters,
-            state: Default::default(),
-        })
-    }
-
-    pub(crate) fn refresh_cache(&mut self) {
-        self.raster_handler
-            .refresh_cache(self.parameters.cache_size);
     }
 }
 

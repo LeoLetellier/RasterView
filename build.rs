@@ -6,6 +6,7 @@ use std::process::Command;
 
 const LUT_LEN: usize = 256;
 const CMAP_FOLDER: &str = "./resources/colormaps/";
+const DEFAULT_CMAP_NAME: &str = "matplotlib/gray";
 
 struct Segment {
     z0: f32,
@@ -76,8 +77,9 @@ fn main() {
 
     let mut blob: Vec<u8> = Vec::new();
     let mut registry = String::from("pub(crate) static COLORMAPS: &[ColormapEntry] = &[\n");
+    let mut default_idx: Option<usize> = None;
 
-    for path in files {
+    for (idx, path) in files.iter().enumerate() {
         println!("cargo:rerun-if-changed={}", path.display());
 
         let category = path
@@ -89,7 +91,13 @@ fn main() {
         let (base_name, cmap_type) = split_type_suffix(stem);
         let full_name = format!("{category}/{base_name}");
 
-        let text = fs::read_to_string(&path)
+        // Entries are pushed one per file, in order, so `idx` is the index
+        // this entry will have in COLORMAPS. Keep the first match.
+        if full_name == DEFAULT_CMAP_NAME && default_idx.is_none() {
+            default_idx = Some(idx);
+        }
+
+        let text = fs::read_to_string(path)
             .unwrap_or_else(|e| panic!("failed to read {}: {e}", path.display()));
         let parsed = parse_cpt(&text, &names)
             .unwrap_or_else(|e| panic!("failed to parse {}: {e}", path.display()));
@@ -106,6 +114,18 @@ fn main() {
     }
 
     registry.push_str("];\n");
+
+    let default_idx = default_idx.unwrap_or_else(|| {
+        panic!(
+            "default colormap `{DEFAULT_CMAP_NAME}` not found among {} .cpt files in {CMAP_FOLDER}",
+            files.len()
+        )
+    });
+    registry.push_str(&format!(
+        "\npub(crate) const DEFAULT_COLORMAP_IDX: usize = {default_idx};\n\
+         const _: () = assert!(DEFAULT_COLORMAP_IDX < COLORMAPS.len());\n"
+    ));
+
     fs::write(out_dir.join("colormaps.bin"), &blob).unwrap();
     fs::write(out_dir.join("colormaps_registry.rs"), registry).unwrap();
 }
