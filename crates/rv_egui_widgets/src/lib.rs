@@ -1,8 +1,8 @@
-pub(crate) mod icon_button;
-pub(crate) mod info_card;
-pub(crate) mod inspector;
-pub(crate) mod phosphor;
-pub(crate) mod value_bar;
+pub mod icon_button;
+pub mod info_card;
+pub mod inspector;
+pub mod phosphor;
+pub mod value_bar;
 
 use egui::{FontDefinitions, FontFamily};
 use egui_phosphor as icon;

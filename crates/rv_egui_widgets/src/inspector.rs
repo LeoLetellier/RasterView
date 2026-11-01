@@ -4,9 +4,9 @@ use std::time::Duration;
 use egui::Response;
 use egui::emath::Numeric;
 use egui::{
-    Align, AsId, CollapsingHeader, Color32, ComboBox, CornerRadius, CursorIcon, DragValue, Frame,
-    Id, Label, Layout, Margin, RichText, Sense, Shape, Slider, Stroke, TextEdit, TextStyle, Ui,
-    Vec2, pos2, text::LayoutJob, vec2,
+    Align, AsIdSalt, CollapsingHeader, Color32, ComboBox, CornerRadius, CursorIcon, DragValue,
+    Frame, Id, Label, Layout, Margin, RichText, Sense, Shape, Slider, Stroke, TextEdit, TextStyle,
+    Ui, Vec2, pos2, text::LayoutJob, vec2,
 };
 
 /// Inspector like display of nested values
@@ -47,9 +47,9 @@ pub struct InspectorColors {
 }
 
 impl Inspector {
-    pub fn new(id_salt: impl AsId) -> Self {
+    pub fn new(id_salt: impl AsIdSalt) -> Self {
         Self {
-            id: Id::new(id_salt),
+            id: Id::unique(id_salt),
             label_fraction: 0.38,
             min_label_width: 60.0,
             row_height: 22.0,
@@ -472,9 +472,10 @@ impl<'a> Field<'a> {
             changed = kind(ui, &opts, cfg);
         });
         if !opts.own_tooltip
-            && let Some(t) = &opts.tooltip {
-                r.response.on_hover_text(t);
-            }
+            && let Some(t) = &opts.tooltip
+        {
+            r.response.on_hover_text(t);
+        }
         changed
     }
 }

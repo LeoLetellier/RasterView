@@ -4,7 +4,7 @@ mod app;
 mod panels;
 mod raster;
 mod viewers;
-mod widgets;
+pub use rv_egui_widgets as widgets;
 
 pub(crate) use app::RasterView;
 pub(crate) use egui_phosphor as icon;

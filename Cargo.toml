@@ -1,3 +1,14 @@
+[workspace]
+members = ["crates/*"]
+resolver = "3"
+
+[workspace.dependencies]
+egui = "0.37"
+eframe = { version = "0.37.0", features = ["persistence"] }
+egui-phosphor = { git = "https://github.com/LeoLetellier/egui-phosphor", branch = "0.37", features = ["bold", "fill", "light", "thin"] }
+egui_extras = "0.37.0"
+egui_plot = "0.38.0"
+
 [package]
 name = "raster_view"
 version = "0.1.0"
@@ -15,13 +26,14 @@ keywords = ["raster", "viewer", "gdal"]
 build = "build.rs"
 
 [dependencies]
+rv_egui_widgets = { path = "crates/rv_egui_widgets" }
+egui.workspace = true
+eframe.workspace = true
+egui-phosphor.workspace = true
+egui_extras.workspace = true
+egui_plot.workspace = true
 anyhow = "1.0.104"
 clap = "4.6.7"
-eframe = { version = "0.37.0", features = ["persistence"] }
-egui = "0.37.0"
-egui-phosphor = { git = "https://github.com/LeoLetellier/egui-phosphor", branch = "0.37", features = ["bold", "fill", "light", "thin"] }
-egui_extras = "0.37.0"
-egui_plot = "0.38.0"
 # ndarray = { version = "0.17.2", features = ["rayon"] }
 num-traits = "0.2.19"
 ordered-float = "5.5.1"
