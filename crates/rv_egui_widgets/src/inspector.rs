@@ -5,8 +5,8 @@ use egui::Response;
 use egui::emath::Numeric;
 use egui::{
     Align, AsIdSalt, CollapsingHeader, Color32, ComboBox, CornerRadius, CursorIcon, DragValue,
-    Frame, Id, Label, Layout, Margin, RichText, Sense, Shape, Slider, Stroke, TextEdit, TextStyle,
-    Ui, Vec2, pos2, text::LayoutJob, vec2,
+    Frame, Id, Label, Layout, Margin, Rect, RichText, Sense, Shape, Slider, Stroke, TextEdit,
+    TextStyle, Ui, UiBuilder, pos2, text::LayoutJob, vec2,
 };
 
 /// Inspector like display of nested values
@@ -160,7 +160,7 @@ impl Inspector {
     pub fn show(self, ui: &mut Ui, add: impl FnOnce(&mut InspectorUi<'_>)) -> bool {
         let mut changed = false;
         ui.scope(|ui| {
-            ui.spacing_mut().item_spacing.y = self.row_gap;
+            ui.spacing_mut().item_spacing = vec2(self.field_gap, self.row_gap);
             ui.push_id(self.id, |ui| {
                 let mut ins = InspectorUi {
                     ui,
@@ -247,6 +247,16 @@ impl<'a> Field<'a> {
         f
     }
 
+    /// Like `value`, but borrows the text instead of allocating a `String`.
+    pub fn value_str(v: &'a str) -> Self {
+        let mut f = Self::new(move |ui, o, cfg| {
+            copyable_label(ui, v, o, cfg);
+            false
+        });
+        f.opts.own_tooltip = true;
+        f
+    }
+
     /// Small centered weak text, for column headers (see `InspectorUi::header_row`).
     pub fn header(text: impl Into<String>) -> Field<'static> {
         let t = text.into();
@@ -282,7 +292,10 @@ impl<'a> Field<'a> {
                 d = d.suffix(s.clone());
             }
             let w = ui.available_width();
-            ui.add_sized([w, cfg.row_height - 2.0], d).changed()
+            let sp = ui.spacing_mut();
+            sp.interact_size.x = w;
+            sp.interact_size.y = cfg.row_height - 2.0;
+            ui.add(d).changed()
         })
     }
 
@@ -322,10 +335,9 @@ impl<'a> Field<'a> {
     }
 
     pub fn text_edit(v: &'a mut String) -> Self {
-        Self::new(move |ui, _, cfg| {
+        Self::new(move |ui, _, _| {
             let w = ui.available_width();
-            ui.add_sized([w, cfg.row_height - 2.0], TextEdit::singleline(v))
-                .changed()
+            ui.add(TextEdit::singleline(v).desired_width(w)).changed()
         })
     }
 
@@ -467,14 +479,14 @@ impl<'a> Field<'a> {
                 .unwrap_or(ui.visuals().weak_text_color());
             ui.label(RichText::new(n).small().color(c));
         }
-        let mut changed = false;
-        let r = ui.add_enabled_ui(opts.enabled, |ui| {
-            changed = kind(ui, &opts, cfg);
-        });
-        if !opts.own_tooltip
-            && let Some(t) = &opts.tooltip
-        {
-            r.response.on_hover_text(t);
+        if !opts.enabled {
+            ui.disable();
+        }
+        let changed = kind(ui, &opts, cfg);
+        if !opts.own_tooltip {
+            if let Some(t) = &opts.tooltip {
+                ui.response().on_hover_text(t);
+            }
         }
         changed
     }
@@ -539,11 +551,16 @@ fn flag_widget(ui: &mut Ui, on: bool, o: &FieldOpts, cfg: &Inspector) {
 
     // 3. paint
     if ui.is_rect_visible(rect) {
-        let t = ui.ctx().animate_bool_with_time(
-            resp.id.with("flag_hover"),
-            resp.hovered(),
-            cfg.fade_time,
-        );
+        let t = if cfg.fade_time <= 0.0 {
+            // No animation: no context lock, no repaint requests.
+            if resp.hovered() { 1.0 } else { 0.0 }
+        } else {
+            ui.ctx().animate_bool_with_time(
+                resp.id.with("flag_hover"),
+                resp.hovered(),
+                cfg.fade_time,
+            )
+        };
         let p = ui.painter();
         let r = icon * 0.5;
         let sw = (icon * 0.11).max(1.2);
@@ -630,27 +647,36 @@ fn copyable_label(ui: &mut Ui, raw: &str, o: &FieldOpts, cfg: &Inspector) {
 fn copy_response(ui: &mut Ui, resp: Response, raw: &str, tooltip: Option<&str>, can_copy: bool) {
     if !can_copy {
         if let Some(t) = tooltip {
-            resp.on_hover_text(t);
+            // Closure only runs while the tooltip is visible (no String allocation otherwise).
+            resp.on_hover_ui(|ui| {
+                ui.label(t);
+            });
         }
         return;
     }
 
+    let id = resp.id;
     let resp = resp.on_hover_cursor(CursorIcon::Copy);
-    let now = ui.input(|i| i.time);
+
+    // Click: the only place we write state and schedule a repaint.
     if resp.clicked() {
         ui.ctx().copy_text(raw.to_owned());
-        ui.data_mut(|d| d.insert_temp(resp.id, now));
-    }
-    let recent = ui
-        .data(|d| d.get_temp::<f64>(resp.id))
-        .is_some_and(|t| now - t < 1.2);
-    if recent {
+        let now = ui.input(|i| i.time);
+        ui.data_mut(|d| d.insert_temp(id, now));
+        // Make sure the tooltip flips back from "Copied!" even if nothing else repaints.
         ui.ctx().request_repaint_after(Duration::from_millis(1300));
     }
-    let tip = if recent { "Copied!" } else { "Click to copy" };
-    resp.on_hover_text(match tooltip {
-        Some(t) => format!("{t}\n{tip}"),
-        None => tip.to_owned(),
+
+    // Hover: nothing runs unless the tooltip is actually being shown.
+    resp.on_hover_ui(|ui| {
+        let now = ui.input(|i| i.time);
+        let copied = ui
+            .data(|d| d.get_temp::<f64>(id))
+            .is_some_and(|t| now - t < 1.2);
+        if let Some(t) = tooltip {
+            ui.label(t);
+        }
+        ui.label(if copied { "Copied!" } else { "Click to copy" });
     });
 }
 
@@ -766,6 +792,11 @@ impl<'a> InspectorUi<'a> {
         self.prop(label, Field::value(value));
     }
 
+    /// Read-only copyable value borrowed from existing data.
+    pub fn text_str(&mut self, label: impl Into<String>, value: &str) {
+        self.prop(label, Field::value_str(value));
+    }
+
     /// Column titles aligned with the fields of the rows below it.
     pub fn header_row(&mut self, names: &[&str]) {
         let fields: Vec<Field<'static>> = names.iter().map(|n| Field::header(*n)).collect();
@@ -797,82 +828,94 @@ impl<'a> InspectorUi<'a> {
         let idx = self.row_idx;
         self.row_idx += 1;
 
-        let fill = if cfg.striped && idx % 2 == 1 {
-            cfg.colors
-                .stripe
-                .unwrap_or(self.ui.visuals().faint_bg_color)
-        } else {
-            Color32::TRANSPARENT
-        };
-
         let Row {
             label,
             hint,
             label_color,
             fields,
         } = row;
-        let n = fields.len();
-        let total_weight: f32 = fields.iter().map(|f| f.opts.weight).sum::<f32>().max(0.05);
         let h = cfg.row_height;
+        let pad_y = cfg.pad_y as f32;
+
+        let full = self.ui.available_width();
+        let (rect, _) = self
+            .ui
+            .allocate_exact_size(vec2(full, h + 2.0 * pad_y), Sense::hover());
+
+        // Off-screen rows (inside a ScrollArea) cost nothing.
+        if !self.ui.is_rect_visible(rect) {
+            return false;
+        }
+
+        if cfg.striped && idx % 2 == 1 {
+            let fill = cfg
+                .colors
+                .stripe
+                .unwrap_or(self.ui.visuals().faint_bg_color);
+            self.ui
+                .painter()
+                .rect_filled(rect, CornerRadius::same(cfg.corner_radius), fill);
+        }
+
+        let inner = rect.shrink2(vec2(cfg.pad_x as f32, pad_y));
+        let inner_w = inner.width();
+        let label_w = (inner_w * cfg.label_fraction)
+            .max(cfg.min_label_width)
+            .min(inner_w * 0.8);
+
+        fn cell(ui: &mut Ui, idx: usize, col: usize, r: Rect, layout: Layout) -> Ui {
+            let mut c = ui.new_child(
+                UiBuilder::new()
+                    .id_salt((idx, col))
+                    .max_rect(r)
+                    .layout(layout),
+            );
+            c.set_clip_rect(r.intersect(ui.clip_rect()));
+            c
+        }
+
+        // label
+        if !label.is_empty() {
+            let lrect = Rect::from_min_size(inner.min, vec2(label_w, h));
+            let layout = if cfg.right_align_labels {
+                Layout::right_to_left(Align::Center)
+            } else {
+                Layout::left_to_right(Align::Center)
+            };
+            let mut lui = cell(self.ui, idx, 0, lrect, layout);
+            let c = label_color
+                .or(cfg.colors.label)
+                .unwrap_or(lui.visuals().weak_text_color());
+            let r = lui.add(Label::new(RichText::new(&label).color(c)).truncate());
+            if let Some(t) = &hint {
+                r.on_hover_text(t);
+            }
+        }
+
+        // fields
+        let n = fields.len();
         let mut changed = false;
+        if n > 0 {
+            let gap = cfg.field_gap;
+            let start_x = inner.left() + label_w + gap;
+            let avail = (inner.right() - start_x - gap * (n as f32 - 1.0)).max(1.0);
+            let total_weight: f32 = fields.iter().map(|f| f.opts.weight).sum::<f32>().max(0.05);
 
-        self.ui.push_id(idx, |ui| {
-            Frame::new()
-                .fill(fill)
-                .inner_margin(Margin::symmetric(cfg.pad_x, cfg.pad_y))
-                .corner_radius(CornerRadius::same(cfg.corner_radius))
-                .show(ui, |ui| {
-                    let full = ui.available_width();
-                    ui.set_min_width(full);
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = cfg.field_gap;
-
-                        // label column
-                        let label_w = (full * cfg.label_fraction)
-                            .max(cfg.min_label_width)
-                            .min(full * 0.8);
-                        let layout = if cfg.right_align_labels {
-                            Layout::right_to_left(Align::Center)
-                        } else {
-                            Layout::left_to_right(Align::Center)
-                        };
-                        ui.allocate_ui_with_layout(Vec2::new(label_w, h), layout, |ui| {
-                            ui.set_min_size(Vec2::new(label_w, h));
-                            if !label.is_empty() {
-                                let c = label_color
-                                    .or(cfg.colors.label)
-                                    .unwrap_or(ui.visuals().weak_text_color());
-                                let r =
-                                    ui.add(Label::new(RichText::new(&label).color(c)).truncate());
-                                if let Some(t) = &hint {
-                                    r.on_hover_text(t);
-                                }
-                            }
-                        });
-
-                        // value column: split between fields by weight
-                        if n == 0 {
-                            return;
-                        }
-                        let avail = ui.available_width() - cfg.field_gap * (n as f32 - 1.0);
-                        for (i, f) in fields.into_iter().enumerate() {
-                            let fw = (avail * f.opts.weight / total_weight).max(1.0);
-                            ui.push_id(i, |ui| {
-                                ui.allocate_ui_with_layout(
-                                    Vec2::new(fw, h),
-                                    Layout::left_to_right(Align::Center),
-                                    |ui| {
-                                        ui.set_min_size(Vec2::new(fw, h));
-                                        if f.show(ui, cfg) {
-                                            changed = true;
-                                        }
-                                    },
-                                );
-                            });
-                        }
-                    });
-                });
-        });
+            let mut x = start_x;
+            for (i, f) in fields.into_iter().enumerate() {
+                let fw = (avail * f.opts.weight / total_weight).max(1.0);
+                let frect = Rect::from_min_size(pos2(x, inner.top()), vec2(fw, h));
+                x += fw + gap;
+                let mut fui = cell(
+                    self.ui,
+                    idx,
+                    i + 1,
+                    frect,
+                    Layout::left_to_right(Align::Center),
+                );
+                changed |= f.show(&mut fui, cfg);
+            }
+        }
 
         self.changed |= changed;
         changed

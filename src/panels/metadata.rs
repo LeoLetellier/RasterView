@@ -6,12 +6,44 @@ use crate::{raster::BandMetadata, viewers::coords::Bbox};
 use eframe::egui::{self, Color32, RichText, Ui};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub(crate) fn ui_metadata_panel(ui: &mut Ui, raster_handler: &RasterHandler) {
+// pub(crate) fn ui_metadata_panel(ui: &mut Ui, raster_handler: &RasterHandler) {
+//     ui.heading("Raster Information");
+//     ui.separator();
+//     ui_source(ui, &raster_handler.src_metadata);
+//     ui_dataset(ui, &raster_handler.raster_metadata);
+//     ui_bands(ui, raster_handler.raster_metadata.bands.iter());
+// }
+
+pub(crate) fn ui_metadata_panel(ui: &mut Ui, rh: &RasterHandler) {
+    let t0 = std::time::Instant::now();
     ui.heading("Raster Information");
     ui.separator();
-    ui_source(ui, &raster_handler.src_metadata);
-    ui_dataset(ui, &raster_handler.raster_metadata);
-    ui_bands(ui, raster_handler.raster_metadata.bands.iter());
+
+    let t = std::time::Instant::now();
+    ui_source(ui, &rh.src_metadata);
+    // egui::Grid::new("src_test").num_columns(2).show(ui, |ui| {
+    //     for i in 0..10 {
+    //         ui.label("Label");
+    //         ui.label(egui::RichText::new("value").monospace());
+    //         ui.end_row();
+    //     }
+    // });
+    let source = t.elapsed();
+
+    let t = std::time::Instant::now();
+    ui_dataset(ui, &rh.raster_metadata);
+    let dataset = t.elapsed();
+
+    let t = std::time::Instant::now();
+    ui_bands(ui, rh.raster_metadata.bands.iter());
+    let bands = t.elapsed();
+
+    if t0.elapsed().as_micros() > 1500 {
+        tracing::warn!(
+            "panel {:?} (source {source:?}, dataset {dataset:?}, bands {bands:?})",
+            t0.elapsed()
+        );
+    }
 }
 
 pub(crate) fn ui_dataset(ui: &mut Ui, raster_metadata: &RasterMetadata) {
@@ -26,6 +58,7 @@ pub(crate) fn ui_dataset(ui: &mut Ui, raster_metadata: &RasterMetadata) {
         ui.heading("Dataset");
         ui.separator();
 
+        let t = std::time::Instant::now();
         InfoCardGrid::new().max_cols(4).show(
             ui,
             vec![
@@ -35,6 +68,7 @@ pub(crate) fn ui_dataset(ui: &mut Ui, raster_metadata: &RasterMetadata) {
                 InfoCard::new("Height", size.1).unit("px"),
             ],
         );
+        let cards = t.elapsed();
 
         ui.separator();
 
@@ -43,6 +77,7 @@ pub(crate) fn ui_dataset(ui: &mut Ui, raster_metadata: &RasterMetadata) {
         let resolutions = gt.resolutions();
         let rotations = gt.rotations();
 
+        let t = std::time::Instant::now();
         Inspector::new("raster_inspector")
             .label_width(0.35)
             .show(ui, |ins| {
@@ -92,6 +127,8 @@ pub(crate) fn ui_dataset(ui: &mut Ui, raster_metadata: &RasterMetadata) {
                     });
                 }
             });
+        let insp = t.elapsed();
+        tracing::warn!("cards {cards:?}, inspector {insp:?}");
     });
 }
 
@@ -131,26 +168,25 @@ fn ui_source(ui: &mut Ui, source_metadata: &SourceMetadata) {
         });
 }
 
-pub(crate) fn ui_bands<'a>(ui: &mut Ui, bands_metadata: impl Iterator<Item = &'a BandMetadata>) {
+pub(crate) fn ui_bands<'a>(ui: &mut Ui, bands: impl Iterator<Item = &'a BandMetadata>) {
     ui.vertical(|ui| {
         ui.heading("Bands");
         ui.separator();
-
-        for (idx, band) in bands_metadata.enumerate() {
-            let band_label = if band.description.is_empty() {
+        for (idx, band) in bands.enumerate() {
+            let label = if band.description.is_empty() {
                 format!("Band {}", idx + 1)
             } else {
                 format!("Band {}: {}", idx + 1, band.description)
             };
-            ui.collapsing(band_label, |ui| {
-                ui_band(ui, band);
-            });
+            egui::CollapsingHeader::new(label)
+                .id_salt(("band", idx))
+                .show(ui, |ui| ui_band(ui, idx, band));
         }
     });
 }
 
-fn ui_band(ui: &mut Ui, band: &BandMetadata) {
-    Inspector::new("band_info")
+fn ui_band(ui: &mut Ui, idx: usize, band: &BandMetadata) {
+    Inspector::new(("band_info", idx))
         .label_width(0.35)
         .min_label_width(80.0)
         .monospace_values(true)
