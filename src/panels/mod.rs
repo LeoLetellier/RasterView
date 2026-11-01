@@ -21,7 +21,7 @@ pub(crate) struct CommandPanel {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-enum PanelType {
+pub(crate) enum PanelType {
     Metadata,
     Palette,
 }

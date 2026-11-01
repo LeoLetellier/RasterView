@@ -22,6 +22,7 @@ pub(crate) struct SettingsPanel {
     locked: Option<(Section, f64)>, // (target, unlock deadline)
     query: String,
     pub(crate) is_open: bool,
+    pub(crate) verbose_changed: bool,
 }
 
 impl Default for SettingsPanel {
@@ -32,6 +33,7 @@ impl Default for SettingsPanel {
             locked: None,
             query: String::new(),
             is_open: false,
+            verbose_changed: false,
         }
     }
 }
@@ -120,8 +122,9 @@ impl SettingsPanel {
         }
 
         let mut clicked: Option<Section> = None;
+        let mut verbose_changed = false;
 
-        let modal = Modal::new(Id::new("settings_modal")).show(ctx, |ui| {
+        let modal = Modal::new(Id::unique("settings_modal")).show(ctx, |ui| {
             ui.set_opacity(t);
             ui.set_max_size(size);
             ui.horizontal_top(|ui| {
@@ -245,12 +248,10 @@ impl SettingsPanel {
                                     &d.show_frame_rate,
                                     toggle,
                                 );
-                                // `row` returns true when the value changed (including via "reset"),
-                                // which is where you'd hook `set_verbose` later.
-                                let _verbose_changed = f.row(
+                                verbose_changed |= f.row(
                                     ui,
                                     "Verbose logs",
-                                    "",
+                                    "Show debug logs from raster_view.",
                                     &mut settings.verbose_logs,
                                     &d.verbose_logs,
                                     toggle,
@@ -266,6 +267,8 @@ impl SettingsPanel {
                 });
             });
         });
+
+        self.verbose_changed = verbose_changed;
 
         // Scroll-spy with lock after rail clicks
         if let Some((target, deadline)) = self.locked {

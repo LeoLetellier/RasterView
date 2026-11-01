@@ -69,9 +69,9 @@ impl Default for AppState {
 fn build_filter(verbose: bool) -> EnvFilter {
     EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         EnvFilter::new(if verbose {
-            "rview=debug,warn"
+            "raster_view=debug,warn"
         } else {
-            "rview=info,warn"
+            "raster_view=info,warn"
         })
     })
 }
@@ -112,13 +112,15 @@ impl RasterView {
             .and_then(|s| eframe::get_value::<Settings>(s, SETTINGS_KEY))
             .unwrap_or_default();
 
-        Self {
+        let app = Self {
             raster_handler: None,
             viewer: Viewer::default(),
-            panels: panels,
+            panels,
             app_state: AppState::default(),
             settings,
-        }
+        };
+        apply_log_level(&app.app_state.tracing_handle, app.settings.verbose_logs);
+        app
     }
 
     pub(crate) fn update_path(&mut self, new_path: &Path, ctx: egui::Context) -> Result<()> {
@@ -177,6 +179,9 @@ impl eframe::App for RasterView {
         }
         // Parameters
         self.panels.settings_panel.ui(ui, &mut self.settings);
+        if self.panels.settings_panel.verbose_changed {
+            apply_log_level(&self.app_state.tracing_handle, self.settings.verbose_logs);
+        }
 
         if self.settings.show_theme_panel && cfg!(debug_assertions) {
             ui.ctx().show_viewport_immediate(

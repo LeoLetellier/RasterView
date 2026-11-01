@@ -1,6 +1,6 @@
 use crate::raster::RasterHandler;
+use crate::raster::tiles::TileDescriptor;
 use crate::viewers::coords::Bbox;
-use crate::viewers::tiler::TileDescriptor;
 use crate::{panels::parameters::Settings, viewers::Viewer};
 use eframe::egui::{self, Ui};
 use egui_plot::{GridInput, GridMark, Plot, PlotBounds, PlotPoint, PlotPoints, PlotUi, Polygon};

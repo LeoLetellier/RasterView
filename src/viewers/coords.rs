@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::raster::GeoTransform;
 use egui_plot::PlotPoint;
 use num_traits::NumCast;

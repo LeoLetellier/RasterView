@@ -39,7 +39,7 @@ pub(crate) fn ui_metadata_panel(ui: &mut Ui, rh: &RasterHandler) {
     let bands = t.elapsed();
 
     if t0.elapsed().as_micros() > 1500 {
-        tracing::warn!(
+        tracing::debug!(
             "panel {:?} (source {source:?}, dataset {dataset:?}, bands {bands:?})",
             t0.elapsed()
         );
@@ -128,7 +128,7 @@ pub(crate) fn ui_dataset(ui: &mut Ui, raster_metadata: &RasterMetadata) {
                 }
             });
         let insp = t.elapsed();
-        tracing::warn!("cards {cards:?}, inspector {insp:?}");
+        tracing::debug!("cards {cards:?}, inspector {insp:?}");
     });
 }
 

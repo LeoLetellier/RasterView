@@ -18,9 +18,9 @@
 
 ## 📌 TODO
 
-- [ ] separate loaded raster from view parameters
+- [x] separate loaded raster from view parameters
 - [x] allow alternatively for loading 2d arrays with user given size and format type
-- [ ] Fix view parameters with user inputs
+- [x] Fix view parameters with user inputs
 - [ ] Fix value range
 - [ ] Fix invert cmap for min max colors
 - [ ] Clean parameters export to user
@@ -29,7 +29,7 @@
 - [ ] Add extended loading strategy, by decreasing loading charge by checking panning/zooming speed and then loading coarser tiles until the view stabilize, and drop all in middle
 - [x] Invert y-axis display
 - [ ] Add resolution to main dataset metadata display
-- [ ] Show all file system info
+- [x] Show all file system info
 - [ ] Implement loading spinner and stats waiting
 - [ ] Add clap cli cmd
 - [ ] Organize parameters panel

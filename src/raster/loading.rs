@@ -6,9 +6,9 @@ use gdal::raster::{Buffer, RasterBand};
 use std::collections::HashSet;
 
 use super::RasterHandler;
+use super::tiles::{Tile, TileDescriptor};
 use crate::viewers::ViewMode;
 use crate::viewers::coords::Bbox;
-use crate::viewers::tiler::{Tile, TileDescriptor};
 
 impl RasterHandler {
     pub(crate) fn request_cache_tiles(
@@ -115,7 +115,7 @@ impl RasterHandler {
 
 /// Compute overview factors (2, 4, 8, ...) until the smallest raster
 /// dimension at that level would fall below `min_size`.
-fn compute_levels(dataset: &Dataset, min_size: usize) -> Vec<i32> {
+fn compute_ovr_levels(dataset: &Dataset, min_size: usize) -> Vec<i32> {
     let (x_size, y_size) = dataset.raster_size();
     let min_dim = x_size.min(y_size) as i32;
 
@@ -136,7 +136,7 @@ pub(crate) fn build_pyramid(
     resample_alg: &str,
     min_size: usize,
 ) -> Result<(), GdalError> {
-    let levels = compute_levels(dataset, min_size);
+    let levels = compute_ovr_levels(dataset, min_size);
     if levels.is_empty() {
         return Ok(());
     }

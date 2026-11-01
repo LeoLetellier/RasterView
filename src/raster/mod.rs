@@ -1,3 +1,8 @@
+use crate::raster::source_metadata::SourceMetadata;
+use crate::{
+    raster::stats::BandStatStatus,
+    viewers::{coords::GeoBox, thread::TextureWorker},
+};
 use anyhow::Result;
 use eframe::egui;
 use gdal::{Dataset, Metadata, raster::RasterBand};
@@ -5,19 +10,10 @@ use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 use std::{ops::Deref, path::Path};
 
-use crate::raster::source_metadata::SourceMetadata;
-use crate::{
-    raster::stats::BandStatStatus,
-    viewers::{
-        coords::GeoBox,
-        thread::TextureWorker,
-        tiler::{TextureCache, Tile, TileDescriptor, TileWeighter},
-    },
-};
-
 pub(crate) mod loading;
 pub(crate) mod source_metadata;
 pub(crate) mod stats;
+pub(crate) mod tiles;
 pub(crate) mod xml_vrt;
 
 #[derive(Debug)]
@@ -27,9 +23,9 @@ pub(crate) struct RasterHandler {
     gdal_dataset: Dataset,
     pub(crate) raster_metadata: RasterMetadata,
     texture_worker: TextureWorker,
-    texture_cache: TextureCache,
-    on_screen_texture_retainer: HashSet<Tile>,
-    pending_tiles: HashSet<TileDescriptor>,
+    texture_cache: tiles::TextureCache,
+    on_screen_texture_retainer: HashSet<tiles::Tile>,
+    pending_tiles: HashSet<tiles::TileDescriptor>,
     pub(crate) bands_stats: Arc<Mutex<Vec<BandStatStatus>>>,
 }
 
@@ -76,10 +72,10 @@ impl RasterHandler {
         let raster_metadata = RasterMetadata::try_from_dataset(&gdal_dataset)?;
 
         let texture_worker = TextureWorker::new(ctx, dataset_for_thread);
-        let texture_cache = TextureCache::with_weighter(
+        let texture_cache = tiles::TextureCache::with_weighter(
             Self::CACHE_EXPECTED_MAXIMUM_ELEMENTS,
             cache_size,
-            TileWeighter,
+            tiles::TileWeighter,
         );
 
         let bands_stats = Arc::new(Mutex::new(
@@ -111,10 +107,10 @@ impl RasterHandler {
     }
 
     pub(crate) fn refresh_cache(&mut self, cache_size: u64) {
-        self.texture_cache = TextureCache::with_weighter(
+        self.texture_cache = tiles::TextureCache::with_weighter(
             Self::CACHE_EXPECTED_MAXIMUM_ELEMENTS,
             cache_size,
-            TileWeighter,
+            tiles::TileWeighter,
         );
         self.on_screen_texture_retainer = Default::default();
     }

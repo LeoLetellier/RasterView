@@ -1,13 +1,11 @@
 use std::{ops::Deref, sync::Arc};
 
-use crate::{
-    Viewer,
-    raster::RasterHandler,
-    viewers::{
-        ActiveViewer, ColorRanging, CpxMode,
-        cmap::{ColorInterpretation, DbMode},
-        tiler::TileDescriptor,
-    },
+use crate::Viewer;
+use crate::raster::RasterHandler;
+use crate::raster::tiles::TileDescriptor;
+use crate::viewers::{
+    ActiveViewer, ColorRanging, CpxMode,
+    cmap::{ColorInterpretation, DbMode},
 };
 
 use eframe::egui::ColorImage;
