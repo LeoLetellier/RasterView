@@ -1,11 +1,11 @@
-use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 const LUT_LEN: usize = 256;
-const CMAP_FOLDER: &str = "./resources/colormaps/";
+const CMAP_SUBDIR: [&str; 2] = ["resources", "colormaps"];
+const GENERATED_DIRS: [&str; 3] = ["matplotlib", "cmocean", "scm"];
 const DEFAULT_CMAP_NAME: &str = "matplotlib/gray";
 
 struct Segment {
@@ -22,57 +22,59 @@ struct ParsedCpt {
     nan: [u8; 4],
 }
 
-fn fetch_cmaps() {
-    let colormap_root = Path::new(CMAP_FOLDER);
-    let required_dirs = ["matplotlib", "cmocean", "scm"];
-    let needs_generation = required_dirs.iter().any(|name| {
-        let dir = colormap_root.join(name);
-        !dir.exists()
-            || dir
-                .read_dir()
-                .map(|mut d| d.next().is_none())
-                .unwrap_or(true)
-    });
+fn colormap_root() -> PathBuf {
+    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+    CMAP_SUBDIR.iter().fold(manifest_dir, |p, s| p.join(s))
+}
 
-    if needs_generation {
-        println!("cargo:warning=Colormap resources missing or empty, generating via uv...");
+fn is_missing_or_empty(dir: &Path) -> bool {
+    // read_dir errors if the directory doesn't exist, so this covers both cases
+    dir.read_dir()
+        .map(|mut d| d.next().is_none())
+        .unwrap_or(true)
+}
 
-        fn launch_fetch(project_dir: &Path, cmap_name: &str) {
-            let script = format!("fetch_{}.py", cmap_name);
+fn launch_fetch(project_dir: &Path, cmap_name: &str) {
+    let script = format!("fetch_{cmap_name}.py");
 
-            let status = Command::new("uv")
-                .arg("run")
-                .arg("--project")
-                .arg(project_dir)
-                .arg(&script)
-                .current_dir(project_dir)
-                .status()
-                .expect("failed to spawn `uv` — is it installed and on PATH?");
+    let status = Command::new("uv")
+        .args(["run", "python", &script])
+        .current_dir(project_dir)
+        .status()
+        .expect("failed to spawn `uv` — is it installed and on PATH?");
 
-            if !status.success() {
-                panic!(
-                    "colormap generation script `{}` failed with status: {:?}",
-                    script,
-                    status.code()
-                );
-            }
+    if !status.success() {
+        panic!(
+            "colormap generation script `{script}` failed with status: {:?}",
+            status.code()
+        );
+    }
+}
+
+/// Only runs the scripts whose output folder is missing or empty.
+fn fetch_cmaps(root: &Path) {
+    for name in GENERATED_DIRS {
+        if is_missing_or_empty(&root.join(name)) {
+            println!(
+                "cargo:warning=Colormap folder `{name}` missing or empty, generating via uv..."
+            );
+            launch_fetch(root, name);
         }
-
-        launch_fetch(colormap_root, "matplotlib");
-        launch_fetch(colormap_root, "cmocean");
-        launch_fetch(colormap_root, "scm");
     }
 }
 
 fn main() {
-    fetch_cmaps();
-    println!("cargo:rerun-if-changed=resources/colormaps");
-    println!("cargo:rerun-if-changed=resources/colormaps/gmt_colors.txt");
+    let root = colormap_root();
+    fetch_cmaps(&root);
 
-    let names = load_color_names("resources/colormaps/gmt_colors.txt");
+    // Watch only the generated folders, not .venv / .ruff_cache
+    for name in GENERATED_DIRS {
+        println!("cargo:rerun-if-changed={}", root.join(name).display());
+    }
+
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
 
-    let mut files = walk_cpt_files(Path::new("resources/colormaps"));
+    let mut files = walk_cpt_files(&root);
     files.sort(); // deterministic build output / stable offsets
 
     let mut blob: Vec<u8> = Vec::new();
@@ -99,8 +101,8 @@ fn main() {
 
         let text = fs::read_to_string(path)
             .unwrap_or_else(|e| panic!("failed to read {}: {e}", path.display()));
-        let parsed = parse_cpt(&text, &names)
-            .unwrap_or_else(|e| panic!("failed to parse {}: {e}", path.display()));
+        let parsed =
+            parse_cpt(&text).unwrap_or_else(|e| panic!("failed to parse {}: {e}", path.display()));
 
         let lut = resample(&parsed.segments, LUT_LEN);
         let offset = blob.len() / 4;
@@ -117,8 +119,9 @@ fn main() {
 
     let default_idx = default_idx.unwrap_or_else(|| {
         panic!(
-            "default colormap `{DEFAULT_CMAP_NAME}` not found among {} .cpt files in {CMAP_FOLDER}",
-            files.len()
+            "default colormap `{DEFAULT_CMAP_NAME}` not found among {} .cpt files in {}",
+            files.len(),
+            root.display()
         )
     });
     registry.push_str(&format!(
@@ -130,8 +133,6 @@ fn main() {
     fs::write(out_dir.join("colormaps_registry.rs"), registry).unwrap();
 }
 
-// ---- directory walking ----
-
 fn walk_cpt_files(root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let Ok(entries) = fs::read_dir(root) else {
@@ -140,6 +141,13 @@ fn walk_cpt_files(root: &Path) -> Vec<PathBuf> {
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
+            let hidden = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with('.'));
+            if hidden {
+                continue; // .venv, .ruff_cache, ...
+            }
             out.extend(walk_cpt_files(&path));
         } else if path.extension().and_then(|e| e.to_str()) == Some("cpt") {
             out.push(path);
@@ -162,36 +170,7 @@ fn split_type_suffix(stem: &str) -> (String, &'static str) {
     panic!("'{stem}.cpt' has no recognized _sequential/_divergent/_cyclic/_other suffix");
 }
 
-// ---- GMT named-color table (build-time only) ----
-
-fn load_color_names(path: &str) -> HashMap<String, [u8; 3]> {
-    let mut map = HashMap::new();
-    let Ok(text) = fs::read_to_string(path) else {
-        println!("cargo:warning=no {path} found; GMT named colors will fail to resolve");
-        return map;
-    };
-    for line in text.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('!') || line.starts_with('#') {
-            continue;
-        }
-        // standard X11 rgb.txt layout: "R G B name..."
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 4 {
-            continue;
-        }
-        let (Ok(r), Ok(g), Ok(b)) = (parts[0].parse(), parts[1].parse(), parts[2].parse()) else {
-            continue;
-        };
-        let name = parts[3..].join("").to_ascii_lowercase();
-        map.insert(name, [r, g, b]);
-    }
-    map
-}
-
-// ---- .cpt parsing ----
-
-fn parse_cpt(text: &str, names: &HashMap<String, [u8; 3]>) -> Result<ParsedCpt, String> {
+fn parse_cpt(text: &str) -> Result<ParsedCpt, String> {
     let mut segments = Vec::new();
     let mut below = [0, 0, 0, 255];
     let mut above = [255, 255, 255, 255];
@@ -214,10 +193,10 @@ fn parse_cpt(text: &str, names: &HashMap<String, [u8; 3]>) -> Result<ParsedCpt, 
 
         let err = |e: String| format!("line {}: {e}", lineno + 1);
         match tokens.first().copied() {
-            Some("B") => below = parse_color_tokens(&tokens[1..], names).map_err(err)?,
-            Some("F") => above = parse_color_tokens(&tokens[1..], names).map_err(err)?,
-            Some("N") => nan = parse_color_tokens(&tokens[1..], names).map_err(err)?,
-            _ => segments.push(parse_segment(&tokens, names).map_err(err)?),
+            Some("B") => below = parse_color_tokens(&tokens[1..]).map_err(err)?,
+            Some("F") => above = parse_color_tokens(&tokens[1..]).map_err(err)?,
+            Some("N") => nan = parse_color_tokens(&tokens[1..]).map_err(err)?,
+            _ => segments.push(parse_segment(&tokens).map_err(err)?),
         }
     }
 
@@ -233,7 +212,7 @@ fn parse_cpt(text: &str, names: &HashMap<String, [u8; 3]>) -> Result<ParsedCpt, 
     })
 }
 
-fn parse_segment(tokens: &[&str], names: &HashMap<String, [u8; 3]>) -> Result<Segment, String> {
+fn parse_segment(tokens: &[&str]) -> Result<Segment, String> {
     match tokens.len() {
         // z0 r0 g0 b0 z1 r1 g1 b1
         8 => Ok(Segment {
@@ -242,23 +221,20 @@ fn parse_segment(tokens: &[&str], names: &HashMap<String, [u8; 3]>) -> Result<Se
             z1: tokens[4].parse().map_err(|_| "bad z1")?,
             c1: rgb_triplet(&tokens[5..8])?,
         }),
-        // z0 color0 z1 color1  (hex / slash / grey / name)
+        // z0 color0 z1 color1  (hex / slash / grey)
         4 => Ok(Segment {
             z0: tokens[0].parse().map_err(|_| "bad z0")?,
-            c0: parse_color_tokens(&tokens[1..2], names)?,
+            c0: parse_color_tokens(&tokens[1..2])?,
             z1: tokens[2].parse().map_err(|_| "bad z1")?,
-            c1: parse_color_tokens(&tokens[3..4], names)?,
+            c1: parse_color_tokens(&tokens[3..4])?,
         }),
         n => Err(format!("unexpected token count {n} in color line")),
     }
 }
 
-fn parse_color_tokens(
-    tokens: &[&str],
-    names: &HashMap<String, [u8; 3]>,
-) -> Result<[u8; 4], String> {
+fn parse_color_tokens(tokens: &[&str]) -> Result<[u8; 4], String> {
     match tokens.len() {
-        1 => parse_color_token(tokens[0], names),
+        1 => parse_color_token(tokens[0]),
         3 => rgb_triplet(tokens),
         n => Err(format!("unexpected color token count {n}")),
     }
@@ -271,10 +247,8 @@ fn rgb_triplet(tokens: &[&str]) -> Result<[u8; 4], String> {
     Ok([r as u8, g as u8, b as u8, 255])
 }
 
-fn parse_color_token(tok: &str, names: &HashMap<String, [u8; 3]>) -> Result<[u8; 4], String> {
-    let (base, _alpha) = tok.split_once('@').unwrap_or((tok, "")); // GMT transparency suffix
-
-    if let Some(hex) = base.strip_prefix('#') {
+fn parse_color_token(tok: &str) -> Result<[u8; 4], String> {
+    if let Some(hex) = tok.strip_prefix('#') {
         let v = u32::from_str_radix(hex, 16).map_err(|_| format!("bad hex color {tok}"))?;
         return Ok([
             ((v >> 16) & 0xff) as u8,
@@ -283,24 +257,21 @@ fn parse_color_token(tok: &str, names: &HashMap<String, [u8; 3]>) -> Result<[u8;
             255,
         ]);
     }
-    if base.contains('/') {
-        let parts: Vec<&str> = base.split('/').collect();
+    if tok.contains('/') {
+        let parts: Vec<&str> = tok.split('/').collect();
         if parts.len() == 3 {
             return rgb_triplet(&parts);
         }
         return Err(format!("bad slash color {tok}"));
     }
-    if let Ok(grey) = base.parse::<f32>() {
+    if let Ok(grey) = tok.parse::<f32>() {
         let g = grey as u8;
         return Ok([g, g, g, 255]);
     }
-    if let Some(rgb) = names.get(&base.to_ascii_lowercase()) {
-        return Ok([rgb[0], rgb[1], rgb[2], 255]);
-    }
-    Err(format!("unknown color '{tok}'"))
+    Err(format!(
+        "unsupported color '{tok}' (expected #hex, r/g/b, or grey level)"
+    ))
 }
-
-// ---- resample segments to a fixed-size LUT ----
 
 fn resample(segments: &[Segment], n: usize) -> Vec<u8> {
     let z_min = segments.first().unwrap().z0;
