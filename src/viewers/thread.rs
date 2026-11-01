@@ -1,5 +1,6 @@
 use crate::viewers::tiler::{Tile, TileDescriptor};
 use anyhow::Result;
+use eframe::egui;
 use gdal::Dataset;
 use std::collections::HashSet;
 use std::sync::mpsc::{self, Receiver, Sender};

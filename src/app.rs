@@ -1,5 +1,5 @@
 use anyhow::Result;
-use eframe::egui::Ui;
+use eframe::egui;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
@@ -163,7 +163,7 @@ impl eframe::App for RasterView {
         eframe::set_value(storage, SETTINGS_KEY, &self.settings);
     }
 
-    fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         // Vrt form
         if self.panels.vrt_raw_panel.is_open {
             let raw_res = self

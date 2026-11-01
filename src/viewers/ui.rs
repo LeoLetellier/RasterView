@@ -1,11 +1,10 @@
-use std::ops::RangeInclusive;
-
 use crate::raster::RasterHandler;
 use crate::viewers::coords::Bbox;
 use crate::viewers::tiler::TileDescriptor;
 use crate::{panels::parameters::Settings, viewers::Viewer};
-use egui::Ui;
+use eframe::egui::{self, Ui};
 use egui_plot::{GridInput, GridMark, Plot, PlotBounds, PlotPoint, PlotPoints, PlotUi, Polygon};
+use std::ops::RangeInclusive;
 
 impl Viewer {
     pub(crate) fn ui(

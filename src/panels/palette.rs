@@ -1,8 +1,8 @@
 use crate::raster::RasterHandler;
+use crate::viewers::Viewer;
 use crate::viewers::cmap::{ColorMap, ColorMapType, DbMode};
 use crate::viewers::{ActiveViewer, ColorRanging, CpxMode};
-use crate::{RasterView, viewers::Viewer};
-use egui::Ui;
+use eframe::egui::{self, Ui};
 use ordered_float::OrderedFloat;
 use std::collections::HashMap;
 

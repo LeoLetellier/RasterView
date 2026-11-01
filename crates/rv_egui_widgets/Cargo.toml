@@ -5,7 +5,6 @@ edition = "2024"
 
 [dependencies]
 egui.workspace = true
-eframe.workspace = true
 egui-phosphor.workspace = true
 egui_extras.workspace = true
 egui_plot.workspace = true

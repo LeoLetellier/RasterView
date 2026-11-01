@@ -3,7 +3,7 @@ use crate::raster::{RasterHandler, RasterMetadata};
 use crate::widgets::info_card::{InfoCard, InfoCardGrid};
 use crate::widgets::inspector::{Field, Inspector};
 use crate::{raster::BandMetadata, viewers::coords::Bbox};
-use egui::{Color32, RichText, Ui};
+use eframe::egui::{self, Color32, RichText, Ui};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub(crate) fn ui_metadata_panel(ui: &mut Ui, raster_handler: &RasterHandler) {

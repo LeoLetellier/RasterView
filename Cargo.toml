@@ -27,7 +27,6 @@ build = "build.rs"
 
 [dependencies]
 rv_egui_widgets = { path = "crates/rv_egui_widgets" }
-egui.workspace = true
 eframe.workspace = true
 egui-phosphor.workspace = true
 egui_extras.workspace = true

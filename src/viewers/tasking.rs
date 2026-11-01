@@ -10,7 +10,7 @@ use crate::{
     },
 };
 
-use egui::ColorImage;
+use eframe::egui::ColorImage;
 use gdal::{Dataset, raster::Buffer};
 use ordered_float::OrderedFloat;
 

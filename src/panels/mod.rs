@@ -3,7 +3,7 @@ use crate::{
     panels::{metadata::ui_metadata_panel, palette::ui_palette_panel},
     raster::RasterHandler,
 };
-use egui::{Color32, Ui, widget_text::WidgetText};
+use eframe::egui::{Color32, Ui, widget_text::WidgetText};
 
 use crate::widgets::icon_button::{IconButton, Indicator, Side};
 

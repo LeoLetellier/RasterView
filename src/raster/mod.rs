@@ -1,4 +1,5 @@
 use anyhow::Result;
+use eframe::egui;
 use gdal::{Dataset, Metadata, raster::RasterBand};
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};

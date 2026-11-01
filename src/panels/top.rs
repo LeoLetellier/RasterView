@@ -1,7 +1,7 @@
 use crate::RasterView;
 use crate::icon;
 use crate::raster::loading::build_pyramid;
-use egui::Ui;
+use eframe::egui::{self, Ui};
 use std::cell::Cell;
 
 use crate::widgets::phosphor::IconText;

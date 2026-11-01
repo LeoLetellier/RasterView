@@ -4,7 +4,7 @@ use crate::raster::CrsKind;
 use crate::viewers::coords::Bbox;
 use crate::widgets::value_bar::ValueBar;
 use crate::widgets::value_bar::ValueItem;
-use egui::Ui;
+use eframe::egui::{self, Ui};
 
 impl RasterView {
     pub(crate) fn ui_bottom_panel(&mut self, ui: &mut Ui) {

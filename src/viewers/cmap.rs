@@ -1,4 +1,4 @@
-use egui::ColorImage;
+use eframe::egui::ColorImage;
 use gdal::raster::Buffer;
 use ordered_float::OrderedFloat;
 use rayon::prelude::*;
@@ -214,14 +214,14 @@ impl ColorMap {
     }
 
     /// Evenly-spaced RGBA samples across the LUT, for lightweight UI previews.
-    pub(crate) fn preview_samples(&self, n: usize) -> Vec<egui::Color32> {
+    pub(crate) fn preview_samples(&self, n: usize) -> Vec<eframe::egui::Color32> {
         let len = self.lut.len();
         (0..n)
             .map(|i| {
                 let t = i as f32 / (n.saturating_sub(1)).max(1) as f32;
                 let idx = (t * (len - 1) as f32).round() as usize;
                 let [r, g, b, a] = self.lut.get(idx);
-                egui::Color32::from_rgba_unmultiplied(r, g, b, a)
+                eframe::egui::Color32::from_rgba_unmultiplied(r, g, b, a)
             })
             .collect()
     }
@@ -360,7 +360,7 @@ impl CyclicWrap {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use egui::Color32;
+    use eframe::egui::Color32;
     use std::collections::HashSet;
     use std::f32::consts::{FRAC_PI_2, PI};
 

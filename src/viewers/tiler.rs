@@ -3,7 +3,7 @@ use crate::viewers::Viewer;
 use crate::viewers::coords::{Bbox, PixelBox};
 use crate::viewers::tasking::ViewStyle;
 
-use egui::{TextureHandle, vec2};
+use eframe::egui::{TextureHandle, vec2};
 use egui_plot::{PlotImage, PlotUi};
 use quick_cache::Weighter;
 use quick_cache::sync::Cache;

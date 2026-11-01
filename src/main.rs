@@ -7,6 +7,7 @@ mod viewers;
 pub use rv_egui_widgets as widgets;
 
 pub(crate) use app::RasterView;
+use eframe::egui;
 pub(crate) use egui_phosphor as icon;
 pub(crate) use viewers::Viewer;
 

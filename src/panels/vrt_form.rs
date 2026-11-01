@@ -1,5 +1,4 @@
-use eframe::egui::Ui;
-use egui::Id;
+use eframe::egui::{self, Id, Ui};
 use std::path::{Path, PathBuf};
 
 use crate::raster::{GeoTransform, RasterHandler, xml_vrt::*};
