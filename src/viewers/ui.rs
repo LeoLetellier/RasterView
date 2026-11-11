@@ -1,8 +1,12 @@
+use crate::panels::point_series::{
+    draw_series_markers, series_handle_click, series_handle_hover, series_is_live,
+    series_is_picking,
+};
 use crate::raster::RasterHandler;
 use crate::raster::tiles::TileDescriptor;
 use crate::viewers::coords::Bbox;
 use crate::{panels::parameters::Settings, viewers::Viewer};
-use eframe::egui::{self, Ui};
+use eframe::egui::{self, CursorIcon, Pos2, Ui};
 use egui_plot::{GridInput, GridMark, Plot, PlotBounds, PlotPoint, PlotPoints, PlotUi, Polygon};
 use std::ops::RangeInclusive;
 
@@ -108,6 +112,55 @@ impl Viewer {
                 tiles.iter().for_each(|t| t.ui_tile_bounds(plot_ui));
             }
         });
+
+        self.state.last_screen_size = last_screen_size;
+        self.state.last_bounds = last_bounds;
+
+        // ---- Point series: picking + markers ----
+        let height = raster_size.1 as f64;
+        let transform = plot_response.transform;
+        let plot_rect = plot_response.response.rect;
+
+        // Pixel (col,row) as f32 -> screen. Plot y is flipped: y_plot = height - row.
+        let pixel_to_screen = |p: Pos2| -> Pos2 {
+            let pos =
+                transform.position_from_point(&PlotPoint::new(p.x as f64, height - p.y as f64));
+            Pos2::new(pos.x, pos.y)
+        };
+
+        // Crosshair cursor while the series panel waits for a click.
+        if series_is_picking(ui.ctx()) && plot_response.response.hovered() {
+            ui.ctx().set_cursor_icon(CursorIcon::Crosshair);
+        }
+        // Live mode: the point follows the mouse while it is over the image (not while panning).
+        if series_is_live(ui.ctx())
+            && !plot_response.response.dragged()
+            && let Some(screen_pos) = plot_response.response.hover_pos()
+        {
+            let v = transform.value_from_position(screen_pos);
+            let col = v.x.floor();
+            let row = (height - v.y).floor();
+            if col >= 0.0 && row >= 0.0 && col < raster_size.0 as f64 && row < height {
+                series_handle_hover(ui.ctx(), (col as usize, row as usize));
+            }
+        }
+
+        // A click (not a pan drag) sets the point/reference.
+        if plot_response.response.clicked()
+            && series_is_picking(ui.ctx())
+            && let Some(screen_pos) = plot_response.response.interact_pointer_pos()
+        {
+            let v = transform.value_from_position(screen_pos);
+            let col = v.x.floor();
+            let row = (height - v.y).floor();
+            if col >= 0.0 && row >= 0.0 && col < raster_size.0 as f64 && row < height {
+                series_handle_click(ui.ctx(), (col as usize, row as usize));
+            }
+        }
+
+        // Overlay the point/reference windows, clipped to the plot area.
+        let painter = ui.painter_at(plot_rect);
+        draw_series_markers(ui.ctx(), &painter, pixel_to_screen);
 
         self.state.last_screen_size = last_screen_size;
         self.state.last_bounds = last_bounds;

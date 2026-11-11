@@ -12,14 +12,6 @@ pub const PLAY: Icon = Icon::new(egui_phosphor::regular::PLAY).with_fill(egui_ph
 pub const PAUSE: Icon =
     Icon::new(egui_phosphor::regular::PAUSE).with_fill(egui_phosphor::fill::PAUSE);
 
-// Point series
-
-pub(crate) fn ui_point_series(ui: &mut Ui, viewer: &mut Viewer, rh: &mut RasterHandler) {
-    ui.label("point series");
-}
-
-// Band slider
-
 #[derive(Clone, Copy)]
 struct PlayState {
     playing: bool,

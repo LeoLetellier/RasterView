@@ -1,9 +1,8 @@
 use crate::{
     Viewer, icon,
     panels::{
-        metadata::ui_metadata_panel,
-        palette::ui_palette_panel,
-        slider::{ui_band_slider, ui_point_series},
+        band_slider::ui_band_slider, metadata::ui_metadata_panel, palette::ui_palette_panel,
+        point_series::ui_point_series,
     },
     raster::RasterHandler,
 };
@@ -11,11 +10,12 @@ use eframe::egui::{Color32, Ui, widget_text::WidgetText};
 
 use crate::widgets::icon_button::{IconButton, Indicator, Side};
 
+pub(crate) mod band_slider;
 pub(crate) mod bottom;
 pub(crate) mod metadata;
 pub(crate) mod palette;
 pub(crate) mod parameters;
-pub(crate) mod slider;
+pub(crate) mod point_series;
 pub(crate) mod top;
 pub(crate) mod vrt_form;
 
