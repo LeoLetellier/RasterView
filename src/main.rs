@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod cli;
 mod panels;
 mod raster;
 mod viewers;
@@ -12,6 +13,7 @@ pub(crate) use egui_phosphor as icon;
 pub(crate) use viewers::Viewer;
 
 fn main() -> eframe::Result {
+    let cli = cli::Cli::parse_validated();
     let _ = app::init_logging_once(false);
 
     if cfg!(debug_assertions) {
@@ -33,7 +35,13 @@ fn main() -> eframe::Result {
         native_options,
         Box::new(|cc| {
             crate::app::setup_custom_fonts(&cc.egui_ctx);
-            Ok(Box::new(app::RasterView::new(cc)))
+            let mut app = app::RasterView::new(cc);
+
+            if let Err(e) = cli.update_app(&mut app, cc.egui_ctx.clone()) {
+                tracing::error!("failed to apply command line arguments: {e:#}");
+            }
+
+            Ok(Box::new(app))
         }),
     )
 }

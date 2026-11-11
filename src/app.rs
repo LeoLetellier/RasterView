@@ -277,16 +277,6 @@ impl eframe::App for RasterView {
     }
 }
 
-pub const REGULAR_FAMILY: &str = "phosphor-regular";
-pub const FILL_FAMILY: &str = "phosphor-fill";
-
-pub fn regular_family() -> egui::FontFamily {
-    egui::FontFamily::Name(REGULAR_FAMILY.into())
-}
-pub fn fill_family() -> egui::FontFamily {
-    egui::FontFamily::Name(FILL_FAMILY.into())
-}
-
 /// Change font family and size from egui default
 ///
 /// Load a custom font from file `.ttf`

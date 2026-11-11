@@ -22,17 +22,17 @@
 - [x] allow alternatively for loading 2d arrays with user given size and format type
 - [x] Fix view parameters with user inputs
 - [ ] Fix value range
-- [ ] Fix invert cmap for min max colors
+- [x] Fix invert cmap for min max colors
 - [ ] Clean parameters export to user
 - [ ] Add keybindings
 - [ ] Add a decrease resolution parameter to allow load data at a resolution coarser than actually could have displayed
 - [ ] Add extended loading strategy, by decreasing loading charge by checking panning/zooming speed and then loading coarser tiles until the view stabilize, and drop all in middle
 - [x] Invert y-axis display
-- [ ] Add resolution to main dataset metadata display
+- [x] Add resolution to main dataset metadata display
 - [x] Show all file system info
 - [ ] Implement loading spinner and stats waiting
 - [ ] Add clap cli cmd
-- [ ] Organize parameters panel
+- [x] Organize parameters panel
 - [x] Make button and forms wrapper
 - [ ] Workaround for loading complex dtype (Rust gdal limitation)
 - [ ] Save screenshot of current view (view + colorbar, need own module)
