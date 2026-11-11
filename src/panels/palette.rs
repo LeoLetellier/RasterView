@@ -480,7 +480,7 @@ fn cmap_preview_swatch(
 }
 
 impl Viewer {
-    fn update_view(&mut self, raster_handler: &mut RasterHandler) {
+    pub(crate) fn update_view(&mut self, raster_handler: &mut RasterHandler) {
         raster_handler.refresh_cache(self.parameters.cache_size);
     }
 

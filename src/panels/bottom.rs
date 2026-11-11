@@ -1,5 +1,5 @@
 use crate::RasterView;
-use crate::panels::PanelType;
+use crate::panels::CommandPanelType;
 use crate::raster::CrsKind;
 use crate::viewers::coords::Bbox;
 use crate::widgets::value_bar::ValueBar;
@@ -12,12 +12,27 @@ impl RasterView {
             // Left side
             self.panels.command_panel.panel_button(
                 ui,
-                PanelType::Metadata,
+                CommandPanelType::Metadata,
                 "Toggle metadata panel",
             );
-            self.panels
-                .command_panel
-                .panel_button(ui, PanelType::Palette, "Toggle palette panel");
+            self.panels.command_panel.panel_button(
+                ui,
+                CommandPanelType::Palette,
+                "Toggle palette panel",
+            );
+
+            ui.separator();
+
+            self.panels.slider_panel.panel_button(
+                ui,
+                super::SliderPanelType::BandSlider,
+                "Toggle band slider",
+            );
+            self.panels.slider_panel.panel_button(
+                ui,
+                super::SliderPanelType::PointSeries,
+                "Toggle point series",
+            );
 
             // Right side: takes the remaining width, first added = rightmost
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::{ops::Deref, path::Path};
 
 pub(crate) mod loading;
+pub(crate) mod series;
 pub(crate) mod source_metadata;
 pub(crate) mod stats;
 pub(crate) mod tiles;

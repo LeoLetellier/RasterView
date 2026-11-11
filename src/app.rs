@@ -3,9 +3,9 @@ use eframe::egui;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use crate::panels::CommandPanel;
 use crate::panels::parameters::{Settings, SettingsPanel};
 use crate::panels::vrt_form::VrtRawPanel;
+use crate::panels::{CommandPanel, SliderPanel};
 use crate::raster::RasterHandler;
 use crate::raster::xml_vrt::VrtParameters;
 use crate::viewers::Viewer;
@@ -38,6 +38,8 @@ pub(crate) struct Panels {
     pub(crate) vrt_raw_panel: VrtRawPanel,
     /// Popup for all settings
     pub(crate) settings_panel: SettingsPanel,
+    /// Slider panel
+    pub(crate) slider_panel: SliderPanel,
 }
 
 pub(crate) struct AppState {
@@ -106,6 +108,7 @@ impl RasterView {
             command_panel: CommandPanel::default(),
             vrt_raw_panel: VrtRawPanel::default(),
             settings_panel: SettingsPanel::default(),
+            slider_panel: SliderPanel::default(),
         };
         let settings = cc
             .storage
@@ -235,6 +238,13 @@ impl eframe::App for RasterView {
                         );
                     });
                 });
+
+            let mut is_open = self.panels.slider_panel.is_open;
+            egui::Panel::bottom("slider bottom panel").show_collapsible(ui, &mut is_open, |ui| {
+                self.panels
+                    .slider_panel
+                    .ui(ui, &mut self.viewer, &mut self.raster_handler);
+            });
 
             egui::CentralPanel::default().show(ui, |ui| {
                 if let Some(rh) = &mut self.raster_handler {
