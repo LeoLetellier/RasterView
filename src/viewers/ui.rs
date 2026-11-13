@@ -180,6 +180,7 @@ impl Viewer {
         };
 
         if let Some(cpp) = cursor_plot_pos {
+            // Get graph coords (f64)
             let cpp = PlotPoint::new(cpp.x, raster_handler.raster_size().1 as f64 - cpp.y);
             self.state.last_cursor_pos = Some(cpp)
         }

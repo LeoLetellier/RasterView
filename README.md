@@ -31,7 +31,7 @@
 - [x] Add resolution to main dataset metadata display
 - [x] Show all file system info
 - [ ] Implement loading spinner and stats waiting
-- [ ] Add clap cli cmd
+- [x] Add clap cli cmd
 - [x] Organize parameters panel
 - [x] Make button and forms wrapper
 - [ ] Workaround for loading complex dtype (Rust gdal limitation)

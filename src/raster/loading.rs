@@ -11,6 +11,22 @@ use crate::viewers::ViewMode;
 use crate::viewers::coords::Bbox;
 
 impl RasterHandler {
+    /// Read one pixel of the raster, one point coordinate at one band
+    pub(crate) fn value_at_point(&self, point: (usize, usize), band: usize) -> Result<f32> {
+        let band = self.gdal_dataset.rasterband(band)?;
+        let nodata = band.no_data_value();
+        let mut buffer =
+            band.read_as::<f32>((point.0 as isize, point.1 as isize), (1, 1), (1, 1), None)?;
+        clean_nodata_and_nonfinite(&mut buffer, nodata);
+
+        let value: f32 = *buffer
+            .data()
+            .first()
+            .ok_or(GdalError::BufferSizeMismatch(0, (1, 1)))?;
+
+        Ok(value)
+    }
+
     pub(crate) fn request_cache_tiles(
         &mut self,
         tile_descriptions: &Vec<TileDescriptor>,

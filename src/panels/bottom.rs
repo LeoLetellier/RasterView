@@ -1,6 +1,7 @@
 use crate::RasterView;
 use crate::panels::CommandPanelType;
 use crate::raster::CrsKind;
+use crate::viewers::ActiveViewer;
 use crate::viewers::coords::Bbox;
 use crate::widgets::value_bar::ValueBar;
 use crate::widgets::value_bar::ValueItem;
@@ -110,6 +111,41 @@ impl RasterView {
                             )
                             .shadowed(),
                     );
+                    let (width, height) = raster_handler.raster_metadata.size;
+                    let point: Option<(usize, usize)> = px.and_then(|(x, y)| {
+                        if x < 0.0 || y < 0.0 || x >= width as f64 || y >= height as f64 {
+                            None
+                        } else {
+                            Some((x as usize, y as usize))
+                        }
+                    });
+
+                    let read = |band: usize| {
+                        point.and_then(|p| {
+                            self.raster_handler
+                                .as_ref()
+                                .map(|rh| rh.value_at_point(p, band))
+                                .and_then(Result::ok)
+                        })
+                    };
+
+                    if self.viewer.view_mode.active_viewer == ActiveViewer::Band {
+                        let value = read(self.viewer.view_mode.panchro_band);
+                        ui.add(
+                            ValueBar::new()
+                                .item(ValueItem::new(value).label("Value"))
+                                .shadowed(),
+                        );
+                    } else if self.viewer.view_mode.active_viewer == ActiveViewer::Color {
+                        let (r, g, b) = self.viewer.view_mode.rgb_bands;
+                        ui.add(
+                            ValueBar::new()
+                                .item(ValueItem::new(read(r)).label("R"))
+                                .item(ValueItem::new(read(g)).label("G"))
+                                .item(ValueItem::new(read(b)).label("B"))
+                                .shadowed(),
+                        );
+                    }
                 }
             });
         });
