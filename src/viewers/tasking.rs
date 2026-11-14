@@ -1,12 +1,9 @@
-use std::{ops::Deref, sync::Arc};
+use std::sync::Arc;
 
 use crate::Viewer;
 use crate::raster::RasterHandler;
 use crate::raster::tiles::TileDescriptor;
-use crate::viewers::{
-    ActiveViewer, ColorRanging, CpxMode,
-    cmap::{ColorInterpretation, DbMode},
-};
+use crate::viewers::{ActiveViewer, ColorRanging, CpxMode, cmap::ColorInterpretation};
 
 use eframe::egui::ColorImage;
 use gdal::{Dataset, raster::Buffer};
@@ -83,14 +80,14 @@ pub(crate) struct ColorTask {
     norm_r: (OrderedFloat<f32>, OrderedFloat<f32>),
     norm_g: (OrderedFloat<f32>, OrderedFloat<f32>),
     norm_b: (OrderedFloat<f32>, OrderedFloat<f32>),
-    norm_db: DbMode,
+    norm_db: bool,
 }
 
 impl ColorTask {
     fn new(
         bands: (usize, usize, usize),
         rangings: ((f32, f32), (f32, f32), (f32, f32)),
-        norm_db: DbMode,
+        norm_db: bool,
     ) -> Self {
         ColorTask {
             band_r: bands.0,
@@ -129,10 +126,12 @@ impl ColorTask {
         Arc::new(ColorImage::from_rgba_unmultiplied([width, height], &rgba))
     }
 
-    /// Normalizes a single band's raw f32 data into a 0-255 u8 channel,
-    /// applying dB conversion first if requested. Kept separate from
-    /// `Colormap::apply` since RGB compositing needs plain normalized
-    /// intensity, not a colormap lookup.
+    /// Normalizes a single band's raw f32 data into a 0-255 u8 channel.
+    /// Kept separate from `Colormap::apply` since RGB compositing needs plain
+    /// normalized intensity, not a colormap lookup.
+    ///
+    /// NOTE: `norm_db` is stored in the task (so it invalidates the cache) but
+    /// is not applied here yet.
     fn normalize_channel(
         data: &[f32],
         (min, max): (OrderedFloat<f32>, OrderedFloat<f32>),
@@ -151,44 +150,38 @@ impl ColorTask {
 }
 
 impl Viewer {
-    fn compute_range_panchro(&self, rh: &mut RasterHandler) -> Option<(f32, f32)> {
-        // TODO move impl to raster handler
+    /// Single source of truth for "which (lo, hi) does this band render with".
+    ///
+    /// Pure read: returns `None` while the needed stats are not available yet
+    /// (not requested, still loading, or failed).
+    pub(crate) fn resolve_range(
+        &self,
+        rh: &RasterHandler,
+        band: usize,
+        mode: &ColorRanging,
+    ) -> Option<(f32, f32)> {
         let vm = &self.view_mode;
-        let manual_range = (
-            vm.color_interpretation.ranging_values.0.into_inner(),
-            vm.color_interpretation.ranging_values.1.into_inner(),
-        );
-        let perc = vm
-            .color_interpretation
-            .percentile_clip
-            .deref()
-            .clamp(0.00001, 49.9999) as f64;
-        // Get state of the stats
-        let band = self.view_mode.panchro_band;
-        let band_minmax = rh.band_minmax(band).map(|mm| (mm.0 as f32, mm.1 as f32));
-        let _all_minmax: Option<(f32, f32)> = (1..=rh.raster_count())
-            .map(|b| rh.band_minmax(b))
-            .try_fold((f32::INFINITY, f32::NEG_INFINITY), |acc, mm| {
-                mm.map(|(mn, mx)| (acc.0.min(mn as f32), acc.1.max(mx as f32)))
-            });
-        let band_percentile = rh
-            .band_percentile(band, perc)
-            .zip(rh.band_percentile(band, 100.0 - perc))
-            .map(|(lo, hi)| (lo as f32, hi as f32));
-        let _all_percentile: Option<(f32, f32)> = (1..=rh.raster_count())
-            .map(|b| {
-                rh.band_percentile(b, perc)
-                    .zip(rh.band_percentile(b, 100.0 - perc))
-            })
-            .try_fold((f32::INFINITY, f32::NEG_INFINITY), |acc, pp| {
-                pp.map(|(lo, hi)| (acc.0.min(lo as f32), acc.1.max(hi as f32)))
-            });
+        match mode {
+            ColorRanging::Manual => {
+                let (lo, hi) = vm.manual_range;
+                Some((lo.into_inner(), hi.into_inner()))
+            }
+            ColorRanging::MinMax => rh.band_minmax(band).map(|(mn, mx)| (mn as f32, mx as f32)),
+            ColorRanging::Percentile => {
+                let p = (vm.color_interpretation.percentile_clip.into_inner() as f64)
+                    .clamp(0.00001, 49.9999);
+                let lo = rh.band_percentile(band, p);
+                let hi = rh.band_percentile(band, 100.0 - p);
+                lo.zip(hi).map(|(lo, hi)| (lo as f32, hi as f32))
+            }
+        }
+    }
 
-        // Do the branching — no more silent fallback to manual_range on missing stats
-        match vm.ranging_mode {
-            ColorRanging::Manual => Some(manual_range),
-            ColorRanging::MinMax => band_minmax,
-            ColorRanging::Percentile => band_percentile,
+    /// Band the UI uses as "the" reference for displayed range / complex check.
+    pub(crate) fn reference_band(&self) -> usize {
+        match self.view_mode.active_viewer {
+            ActiveViewer::Band => self.view_mode.panchro_band,
+            ActiveViewer::Color => self.view_mode.rgb_bands.0,
         }
     }
 
@@ -198,92 +191,33 @@ impl Viewer {
 
     fn compute_range_color(
         &self,
-        rh: &mut RasterHandler,
+        rh: &RasterHandler,
     ) -> Option<((f32, f32), (f32, f32), (f32, f32))> {
-        // TODO move impl to raster handler
-        let vm = &self.view_mode;
-        let manual_range = (
-            vm.color_interpretation.ranging_values.0.into_inner(),
-            vm.color_interpretation.ranging_values.1.into_inner(),
-        );
-        let perc = vm
-            .color_interpretation
-            .percentile_clip
-            .deref()
-            .clamp(0.00001, 49.9999) as f64;
-
-        let red = vm.rgb_bands.0;
-        let green = vm.rgb_bands.1;
-        let blue = vm.rgb_bands.2;
-
-        // --- per-band stats (one for each of R, G, B) ---
-        let band_minmax = |band: usize| -> Option<(f32, f32)> {
-            rh.band_minmax(band).map(|mm| (mm.0 as f32, mm.1 as f32))
-        };
-        let band_percentile = |band: usize| -> Option<(f32, f32)> {
-            rh.band_percentile(band, perc)
-                .zip(rh.band_percentile(band, 100.0 - perc))
-                .map(|(lo, hi)| (lo as f32, hi as f32))
-        };
-
-        // --- combined stats across an arbitrary set of bands ---
-        let _combined_minmax = |bands: &[usize]| -> Option<(f32, f32)> {
-            bands
-                .iter()
-                .map(|&b| rh.band_minmax(b))
-                .try_fold((f32::INFINITY, f32::NEG_INFINITY), |acc, mm| {
-                    mm.map(|(mn, mx)| (acc.0.min(mn as f32), acc.1.max(mx as f32)))
-                })
-        };
-        let _combined_percentile = |bands: &[usize]| -> Option<(f32, f32)> {
-            bands
-                .iter()
-                .map(|&b| {
-                    rh.band_percentile(b, perc)
-                        .zip(rh.band_percentile(b, 100.0 - perc))
-                })
-                .try_fold((f32::INFINITY, f32::NEG_INFINITY), |acc, pp| {
-                    pp.map(|(lo, hi)| (acc.0.min(lo as f32), acc.1.max(hi as f32)))
-                })
-        };
-
-        let _all_bands: Vec<usize> = (1..=rh.raster_count()).collect();
-        let _rgb_bands = [red, green, blue];
-
-        match vm.ranging_mode {
-            ColorRanging::Manual => Some((manual_range, manual_range, manual_range)),
-
-            ColorRanging::MinMax => {
-                let r = band_minmax(red)?;
-                let g = band_minmax(green)?;
-                let b = band_minmax(blue)?;
-                Some((r, g, b))
-            }
-
-            ColorRanging::Percentile => {
-                let r = band_percentile(red)?;
-                let g = band_percentile(green)?;
-                let b = band_percentile(blue)?;
-                Some((r, g, b))
-            }
-        }
+        let mode = &self.view_mode.ranging_mode;
+        let (r, g, b) = self.view_mode.rgb_bands;
+        Some((
+            self.resolve_range(rh, r, mode)?,
+            self.resolve_range(rh, g, mode)?,
+            self.resolve_range(rh, b, mode)?,
+        ))
     }
 
-    pub(crate) fn task_view(&self, rh: &mut RasterHandler) -> Option<ViewStyle> {
-        // TODO move impl to raster handler
+    /// Resolves the current UI state into a render task.
+    /// `None` means "not ready yet" (stats missing).
+    pub(crate) fn task_view(&self, rh: &RasterHandler) -> Option<ViewStyle> {
         let vm = &self.view_mode;
         let view_task = match vm.active_viewer {
             ActiveViewer::Band if rh.band_is_complex(vm.panchro_band) => {
                 let range = self.compute_range_panchro_cpx()?;
-                let mut task_ci = vm.color_interpretation.clone();
-                task_ci.with_ranging_values(range);
-                ViewStyle::PanchroCpx(PanchroCpxTask::new(vm.panchro_band, task_ci, vm.cpx_mode))
+                let mut ci = vm.color_interpretation.clone();
+                ci.with_ranging_values(range);
+                ViewStyle::PanchroCpx(PanchroCpxTask::new(vm.panchro_band, ci, vm.cpx_mode))
             }
             ActiveViewer::Band => {
-                let range = self.compute_range_panchro(rh)?;
-                let mut task_ci = vm.color_interpretation.clone();
-                task_ci.with_ranging_values(range);
-                ViewStyle::Panchro(PanchroTask::new(vm.panchro_band, task_ci))
+                let range = self.resolve_range(rh, vm.panchro_band, &vm.ranging_mode)?;
+                let mut ci = vm.color_interpretation.clone();
+                ci.with_ranging_values(range);
+                ViewStyle::Panchro(PanchroTask::new(vm.panchro_band, ci))
             }
             ActiveViewer::Color => {
                 let range = self.compute_range_color(rh)?;
@@ -293,7 +227,6 @@ impl Viewer {
                     vm.color_interpretation.db_mode,
                 ))
             }
-            ActiveViewer::Index => todo!(),
         };
         Some(view_task)
     }

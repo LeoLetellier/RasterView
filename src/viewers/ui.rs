@@ -23,7 +23,7 @@ impl Viewer {
         }
 
         if self.parameters.auto_load_band_stats {
-            raster_handler.preload_band_stats();
+            raster_handler.preload_band_stats(ui.ctx());
         }
 
         let tiles_needed = self.need_tiles(raster_handler);

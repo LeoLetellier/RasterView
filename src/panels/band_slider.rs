@@ -84,14 +84,10 @@ pub(crate) fn ui_band_slider(ui: &mut Ui, viewer: &mut Viewer, rh: &mut RasterHa
                 });
             }
         }
-        ActiveViewer::Index => {
-            play.playing = false;
-            ui.weak("Band slider is not available in Index mode");
-        }
     }
 
     // ---- Playback tick ----
-    if play.playing && viewer.view_mode.active_viewer != ActiveViewer::Index {
+    if play.playing {
         let dt = ui.ctx().input(|i| i.stable_dt);
         play.accum += dt * play.rate;
         let steps = play.accum.floor() as usize;
@@ -125,7 +121,6 @@ fn advance(viewer: &mut Viewer, steps: usize, last: usize) {
             let new_start = FIRST + (lo - FIRST + steps) % positions;
             shift_rgb(viewer, new_start as isize - lo as isize, last);
         }
-        ActiveViewer::Index => {}
     }
 }
 

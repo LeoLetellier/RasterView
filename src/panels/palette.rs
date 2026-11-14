@@ -1,6 +1,6 @@
 use crate::raster::RasterHandler;
 use crate::viewers::Viewer;
-use crate::viewers::cmap::{ColorMap, ColorMapType, DbMode};
+use crate::viewers::cmap::{ColorMap, ColorMapType};
 use crate::viewers::{ActiveViewer, ColorRanging, CpxMode};
 use eframe::egui::{self, Ui};
 use ordered_float::OrderedFloat;
@@ -20,26 +20,22 @@ pub(crate) fn ui_palette_panel(
     viewer: &mut Viewer,
     raster_handler: &mut RasterHandler,
 ) {
-    let old_view = viewer.view_mode.clone();
+    let old_ranging_mode = viewer.view_mode.ranging_mode.clone();
 
     ui.add_space(6.0);
     ui.heading("View settings");
     ui.add_space(10.0);
 
     // VIEWMODE
-    ui.columns(3, |cols| {
+    ui.columns(2, |cols| {
         let panchro_selected = viewer.view_mode.active_viewer == ActiveViewer::Band;
         let color_selected = viewer.view_mode.active_viewer == ActiveViewer::Color;
-        let index_selected = viewer.view_mode.active_viewer == ActiveViewer::Index;
 
         if big_mode_button(&mut cols[0], "Band", panchro_selected) {
             viewer.view_mode.active_viewer = ActiveViewer::Band;
         }
         if big_mode_button(&mut cols[1], "RGB", color_selected) {
             viewer.view_mode.active_viewer = ActiveViewer::Color;
-        }
-        if big_mode_button(&mut cols[2], "Index", index_selected) {
-            todo!()
         }
     });
 
@@ -85,15 +81,9 @@ pub(crate) fn ui_palette_panel(
                         ui.end_row();
                     });
             }
-            ActiveViewer::Index => todo!(),
         }
 
-        let reference_band = match viewer.view_mode.active_viewer {
-            ActiveViewer::Band => viewer.view_mode.panchro_band,
-            ActiveViewer::Color => viewer.view_mode.rgb_bands.0,
-            ActiveViewer::Index => todo!(),
-        };
-        if raster_handler.band_is_complex(reference_band) {
+        if raster_handler.band_is_complex(viewer.reference_band()) {
             ui.add_space(8.0);
             ui.separator();
             ui.add_space(8.0);
@@ -115,6 +105,29 @@ pub(crate) fn ui_palette_panel(
 
     ui.add_space(14.0);
 
+    // Make sure the stats needed by the current view are requested now,
+    // instead of waiting for the sequential background preload to reach them.
+    // `ensure_stats_loaded` is a no-op unless the band is `NotLoaded`.
+    if viewer.view_mode.ranging_mode != ColorRanging::Manual {
+        let ctx = ui.ctx().clone();
+        match viewer.view_mode.active_viewer {
+            ActiveViewer::Band => {
+                raster_handler.ensure_stats_loaded(&ctx, viewer.view_mode.panchro_band);
+            }
+            ActiveViewer::Color => {
+                let (r, g, b) = viewer.view_mode.rgb_bands;
+                for band in [r, g, b] {
+                    raster_handler.ensure_stats_loaded(&ctx, band);
+                }
+            }
+        }
+    }
+
+    // Range currently on screen for the reference band (None while stats load).
+    // Computed with the mode as it was at the start of the frame.
+    let ref_band = viewer.reference_band();
+    let mut shown_range = viewer.resolve_range(raster_handler, ref_band, &old_ranging_mode);
+
     // CMAPS
     if viewer.view_mode.active_viewer != ActiveViewer::Color {
         section_frame(ui, "Colormap", |ui| {
@@ -123,14 +136,12 @@ pub(crate) fn ui_palette_panel(
 
             // Full-width preview, much bigger than the tiny row swatch
             let full_width = ui.available_width();
-            let (OrderedFloat(left_bound), OrderedFloat(right_bound)) =
-                viewer.view_mode.color_interpretation.ranging_values;
             cmap_preview_swatch(
                 ui,
                 &viewer.view_mode.color_interpretation.colormap,
                 egui::vec2(full_width, 22.0),
                 viewer.view_mode.color_interpretation.invert_cmap,
-                Some((left_bound, right_bound)),
+                shown_range,
             );
 
             ui.add_space(10.0);
@@ -140,39 +151,17 @@ pub(crate) fn ui_palette_panel(
                     "Invert",
                 );
                 ui.add_space(16.0);
-                egui::ComboBox::from_label("dB scale")
-                    .selected_text(match viewer.view_mode.color_interpretation.db_mode {
-                        DbMode::None => "None",
-                        DbMode::Intensity => "Intensity (10·log10)",
-                        DbMode::Amplitude => "Amplitude (20·log10)",
-                    })
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(
-                            &mut viewer.view_mode.color_interpretation.db_mode,
-                            DbMode::None,
-                            "None",
-                        )
-                        .on_hover_text("raw");
-                        ui.selectable_value(
-                            &mut viewer.view_mode.color_interpretation.db_mode,
-                            DbMode::Intensity,
-                            "Intensity",
-                        )
-                        .on_hover_text("10·log10");
-                        ui.selectable_value(
-                            &mut viewer.view_mode.color_interpretation.db_mode,
-                            DbMode::Amplitude,
-                            "Amplitude  ",
-                        )
-                        .on_hover_text("20·log10");
-                    });
+                ui.checkbox(
+                    &mut viewer.view_mode.color_interpretation.db_mode,
+                    "dB scaling",
+                );
             });
         });
     }
 
     ui.add_space(14.0);
 
-    // NORMALIZATION
+    // VALUE RANGE
     section_frame(ui, "Value range", |ui| {
         egui::ComboBox::from_id_salt("ranging_mode")
             .width(ui.available_width())
@@ -191,15 +180,28 @@ pub(crate) fn ui_palette_panel(
                 }
             });
 
+        if viewer.view_mode.ranging_mode != old_ranging_mode {
+            // Entering Manual: seed it with what was on screen, not a stale value.
+            if viewer.view_mode.ranging_mode == ColorRanging::Manual {
+                if let Some((lo, hi)) = shown_range {
+                    viewer.view_mode.manual_range = (OrderedFloat(lo), OrderedFloat(hi));
+                }
+            }
+            // Re-resolve for the new mode so the widgets below don't lag a frame.
+            shown_range =
+                viewer.resolve_range(raster_handler, ref_band, &viewer.view_mode.ranging_mode);
+        }
+
         ui.add_space(10.0);
 
-        match &viewer.view_mode.ranging_mode {
+        match viewer.view_mode.ranging_mode.clone() {
             ColorRanging::MinMax => {
-                let (OrderedFloat(min), OrderedFloat(max)) =
-                    viewer.view_mode.color_interpretation.ranging_values;
-                ui.horizontal(|ui| {
-                    stat_pill(ui, "min", min);
-                    stat_pill(ui, "max", max);
+                ui.horizontal(|ui| match shown_range {
+                    Some((min, max)) => {
+                        stat_pill(ui, "min", min);
+                        stat_pill(ui, "max", max);
+                    }
+                    None => stats_pending_ui(ui, raster_handler, ref_band),
                 });
             }
             ColorRanging::Percentile => {
@@ -218,17 +220,23 @@ pub(crate) fn ui_palette_panel(
                 {
                     viewer.view_mode.color_interpretation.percentile_clip = OrderedFloat(clip);
                 }
+                ui.add_space(6.0);
+                ui.horizontal(|ui| match shown_range {
+                    Some((lo, hi)) => {
+                        stat_pill(ui, "low", lo);
+                        stat_pill(ui, "high", hi);
+                    }
+                    None => stats_pending_ui(ui, raster_handler, ref_band),
+                });
             }
             ColorRanging::Manual => {
-                let (min_of, max_of) = viewer.view_mode.color_interpretation.ranging_values;
+                let (min_of, max_of) = viewer.view_mode.manual_range;
                 let mut min = min_of.into_inner();
                 let mut max = max_of.into_inner();
 
                 ui.horizontal(|ui| {
                     ui.label("min");
-                    let r_min = ui.add(
-                        egui::DragValue::new(&mut min).speed(1.0), // tune to your data's typical scale
-                    );
+                    let r_min = ui.add(egui::DragValue::new(&mut min).speed(1.0));
 
                     ui.label("max");
                     let r_max = ui.add(egui::DragValue::new(&mut max).speed(1.0));
@@ -242,14 +250,34 @@ pub(crate) fn ui_palette_panel(
                     }
                 });
 
-                viewer.view_mode.color_interpretation.ranging_values =
-                    (OrderedFloat(min), OrderedFloat(max));
+                viewer.view_mode.manual_range = (OrderedFloat(min), OrderedFloat(max));
             }
         }
     });
 
-    if old_view != viewer.view_mode {
+    // Refresh the tile cache whenever the *resolved* task changes: a UI change,
+    // a manual drag, or a stats job finishing (None -> Some).
+    let task = viewer.task_view(raster_handler);
+    if task != viewer.state.last_view_task {
+        viewer.state.last_view_task = task;
         viewer.update_view(raster_handler);
+    }
+}
+
+/// Spinner while stats load, or the error if the stats job failed.
+fn stats_pending_ui(ui: &mut Ui, raster_handler: &RasterHandler, band: usize) {
+    let error = band
+        .checked_sub(1)
+        .and_then(|idx| raster_handler.bands_stats.get(idx))
+        .and_then(|status| status.error());
+    match error {
+        Some(err) => {
+            ui.colored_label(egui::Color32::LIGHT_RED, format!("stats failed: {err}"));
+        }
+        None => {
+            ui.spinner();
+            ui.weak("computing stats…");
+        }
     }
 }
 
@@ -482,15 +510,5 @@ fn cmap_preview_swatch(
 impl Viewer {
     pub(crate) fn update_view(&mut self, raster_handler: &mut RasterHandler) {
         raster_handler.refresh_cache(self.parameters.cache_size);
-    }
-
-    fn _load_minmax(&mut self, raster_handler: &mut RasterHandler) {
-        let minmax = raster_handler.band_minmax(self.view_mode.panchro_band);
-        if let Some((min, max)) = minmax {
-            let new_range = (min as f32, max as f32);
-            self.view_mode
-                .color_interpretation
-                .with_ranging_values(new_range);
-        }
     }
 }

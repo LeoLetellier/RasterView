@@ -93,24 +93,6 @@ impl RasterView {
                     // Light/Dark mode switch
                     egui::widgets::global_theme_preference_buttons(ui);
 
-                    // Loading spinner
-                    let loading = &self.viewer.state.background_loading;
-
-                    if loading.any_loading() {
-                        let mut items = Vec::new();
-                        if loading.loading_tile {
-                            items.push("tile");
-                        }
-                        if loading.loading_stat {
-                            items.push("stat");
-                        }
-                        let message = format!("Loading: {}", items.join(", "));
-                        ui.add(egui::Spinner::new()).on_hover_text(message);
-                    } else {
-                        ui.label(egui::RichText::from(icon::regular::CHECK_FAT))
-                            .on_hover_text("Nothing to load");
-                    }
-
                     right_start_x = ui.min_rect().left();
                 },
             );

@@ -1,146 +1,157 @@
-use std::sync::Arc;
+use std::fmt;
+use std::path::Path;
 use std::thread;
 
 use anyhow::Result;
+use eframe::egui::Context;
 use gdal::Dataset;
 use gdal::errors::GdalError;
 use gdal::raster::RasterBand;
+use poll_promise::Promise;
 
 use super::RasterHandler;
 
+const HIST_BUCKETS: usize = 200;
+
+type StatsResult = Result<RasterBandStats, String>;
+
+pub(crate) enum BandStatStatus {
+    NotLoaded,
+    /// Started. The promise holds Ok(stats) or Err(message) once finished.
+    Requested(Promise<StatsResult>),
+}
+
+impl fmt::Debug for BandStatStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotLoaded => f.write_str("NotLoaded"),
+            Self::Requested(p) => match p.ready() {
+                None => f.write_str("Loading"),
+                Some(Ok(s)) => write!(f, "Loaded(min={}, max={})", s.min, s.max),
+                Some(Err(e)) => write!(f, "Failed({e:?})"),
+            },
+        }
+    }
+}
+
+impl BandStatStatus {
+    /// Stats if the job finished successfully.
+    fn stats(&self) -> Option<&RasterBandStats> {
+        match self {
+            Self::Requested(p) => p.ready()?.as_ref().ok(),
+            Self::NotLoaded => None,
+        }
+    }
+
+    pub(crate) fn is_loading(&self) -> bool {
+        matches!(self, Self::Requested(p) if p.ready().is_none())
+    }
+
+    pub(crate) fn error(&self) -> Option<&str> {
+        match self {
+            Self::Requested(p) => p.ready()?.as_ref().err().map(String::as_str),
+            Self::NotLoaded => None,
+        }
+    }
+}
+
 impl RasterHandler {
+    /// `band` is 1-based everywhere (GDAL convention). Convert once, here.
+    fn band_slot(&self, band: usize) -> Option<&BandStatStatus> {
+        self.bands_stats.get(band.checked_sub(1)?)
+    }
+
+    fn band_stats(&self, band: usize) -> Option<&RasterBandStats> {
+        self.band_slot(band)?.stats()
+    }
+
+    // ---- plain getters: no lock, no loading, just read the current state ----
+
     pub(crate) fn band_minmax(&self, band: usize) -> Option<(f64, f64)> {
-        let cache = self.bands_stats.lock().unwrap();
-        match cache.get(band - 1) {
-            Some(BandStatStatus::Loaded(stats)) => Some((stats.min, stats.max)),
-            _ => None,
-        }
+        self.band_stats(band).map(|s| (s.min, s.max))
     }
 
-    pub(crate) fn _band_minmax_or_load(&mut self, band: usize) -> Option<(f64, f64)> {
-        self.ensure_stats_loaded(band);
-        let cache = self.bands_stats.lock().unwrap();
-        match cache.get(band - 1) {
-            Some(BandStatStatus::Loaded(stats)) => Some((stats.min, stats.max)),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn _band_histogram(&self, band: usize) -> Option<(f64, f64, Vec<u64>)> {
-        let cache = self.bands_stats.lock().unwrap();
-        match cache.get(band) {
-            Some(BandStatStatus::Loaded(stats)) => {
-                Some((stats.min, stats.max, stats.counts.clone()))
-            }
-            _ => None,
-        }
-    }
-
-    pub(crate) fn _band_histogram_or_load(&mut self, band: usize) -> Option<(f64, f64, Vec<u64>)> {
-        self.ensure_stats_loaded(band);
-        let cache = self.bands_stats.lock().unwrap();
-        match cache.get(band) {
-            Some(BandStatStatus::Loaded(stats)) => {
-                Some((stats.min, stats.max, stats.counts.clone()))
-            }
-            _ => None,
-        }
+    pub(crate) fn band_histogram(&self, band: usize) -> Option<(f64, f64, &[u64])> {
+        self.band_stats(band)
+            .map(|s| (s.min, s.max, s.counts.as_slice()))
     }
 
     pub(crate) fn band_percentile(&self, band: usize, percentile: f64) -> Option<f64> {
-        let cache = self.bands_stats.lock().unwrap();
-        match cache.get(band) {
-            Some(BandStatStatus::Loaded(stats)) => {
-                value_at_percentile(&stats.counts, stats.min, stats.max, percentile)
-            }
-            _ => None,
-        }
+        let s = self.band_stats(band)?;
+        value_at_percentile(&s.counts, s.min, s.max, percentile)
     }
 
-    pub(crate) fn _band_percentile_or_load(&mut self, band: usize, percentile: f64) -> Option<f64> {
-        self.ensure_stats_loaded(band);
-        let cache = self.bands_stats.lock().unwrap();
-        match cache.get(band) {
-            Some(BandStatStatus::Loaded(stats)) => {
-                value_at_percentile(&stats.counts, stats.min, stats.max, percentile)
-            }
-            _ => None,
-        }
+    // ---- "or_load" variants: kick off loading, then read whatever exists ----
+
+    pub(crate) fn band_minmax_or_load(&mut self, ctx: &Context, band: usize) -> Option<(f64, f64)> {
+        self.ensure_stats_loaded(ctx, band);
+        self.band_minmax(band)
     }
 
-    /// If the band isn't loaded and isn't already loading, kick off a
-    /// background thread to compute stats + histogram for it.
-    pub(crate) fn ensure_stats_loaded(&self, band: usize) {
-        let band_index = band - 1;
-        {
-            let cache = self.bands_stats.lock().unwrap();
-            match cache.get(band_index) {
-                Some(BandStatStatus::NotLoaded) => {}
-                _ => return, // already loading / loaded / failed / out of range
-            }
-        }
+    pub(crate) fn band_percentile_or_load(
+        &mut self,
+        ctx: &Context,
+        band: usize,
+        percentile: f64,
+    ) -> Option<f64> {
+        self.ensure_stats_loaded(ctx, band);
+        self.band_percentile(band, percentile)
+    }
 
-        {
-            let mut cache = self.bands_stats.lock().unwrap();
-            match cache.get_mut(band_index) {
-                Some(slot @ BandStatStatus::NotLoaded) => *slot = BandStatStatus::Loading,
-                _ => return,
-            }
+    /// Start a background job for this band unless one was already started.
+    pub(crate) fn ensure_stats_loaded(&mut self, ctx: &Context, band: usize) {
+        let Some(idx) = band.checked_sub(1) else {
+            return;
+        };
+        // Borrow ends at the end of this statement.
+        if !matches!(self.bands_stats.get(idx), Some(BandStatStatus::NotLoaded)) {
+            return; // out of range, loading, loaded or failed
         }
 
         let path = self.path.clone();
-        let buckets = 200;
-        let cache_handle = Arc::clone(&self.bands_stats);
+        let ctx = ctx.clone();
+        let (sender, promise) = Promise::new();
 
-        thread::spawn(move || {
-            let result = (|| -> gdal::errors::Result<RasterBandStats> {
-                let dataset = Dataset::open(&path)?;
-                let rb = dataset.rasterband(band)?;
+        thread::Builder::new()
+            .name(format!("band_stats_{band}"))
+            .spawn(move || {
+                let result =
+                    compute_band_stats(&path, band, HIST_BUCKETS).map_err(|e| e.to_string());
+                sender.send(result);
+                ctx.request_repaint();
+            })
+            .expect("failed to spawn stats thread");
 
-                let stats = rb.get_statistics(true, true)?.ok_or_else(|| {
-                    GdalError::BadArgument("unable to compute raster statistics".into())
-                })?;
-
-                let hist = rb.histogram(stats.min, stats.max, buckets as usize, false, true)?;
-
-                Ok(RasterBandStats {
-                    min: stats.min,
-                    max: stats.max,
-                    _mean: stats.mean,
-                    _std: stats.std_dev,
-                    counts: hist.counts().to_vec(),
-                })
-            })();
-
-            let mut cache = cache_handle.lock().unwrap();
-            if let Some(slot) = cache.get_mut(band - 1) {
-                *slot = match result {
-                    Ok(stats) => BandStatStatus::Loaded(stats),
-                    Err(e) => BandStatStatus::Failed(e.to_string()),
-                };
-            }
-        });
+        self.bands_stats[idx] = BandStatStatus::Requested(promise);
     }
 
-    pub(crate) fn preload_band_stats(&mut self) {
-        let len = self.bands_stats.lock().unwrap().len();
-
-        'scan: for idx in 0..len {
-            let should_start = {
-                let cache = self.bands_stats.lock().unwrap();
-                match cache.get(idx) {
-                    Some(BandStatStatus::NotLoaded) => true,
-                    Some(BandStatStatus::Loading) => break 'scan,
-                    _ => false,
-                }
-            };
-            if should_start {
-                self.ensure_stats_loaded(idx + 1);
-                tracing::info!(">>Loading stats for band {}", idx);
-                break 'scan;
+    /// Call once per frame: starts the next band only when nothing is in flight.
+    pub(crate) fn preload_band_stats(&mut self, ctx: &Context) {
+        let mut next = None;
+        for (i, status) in self.bands_stats.iter().enumerate() {
+            if status.is_loading() {
+                return; // one at a time
+            }
+            if next.is_none() && matches!(status, BandStatStatus::NotLoaded) {
+                next = Some(i + 1);
             }
         }
+        if let Some(band) = next {
+            tracing::info!(">>Loading stats for band {band}");
+            self.ensure_stats_loaded(ctx, band);
+        }
     }
+}
+
+/// Runs on the worker thread. Opens its own Dataset (GDAL datasets aren't Send).
+fn compute_band_stats(
+    path: impl AsRef<Path>,
+    band: usize,
+    buckets: usize,
+) -> gdal::errors::Result<RasterBandStats> {
+    let dataset = Dataset::open(path)?;
+    let rb = dataset.rasterband(band)?;
+    RasterBandStats::from_rasterband(&rb, buckets)
 }
 
 #[derive(Debug)]
@@ -152,45 +163,32 @@ pub(crate) struct RasterBandStats {
     counts: Vec<u64>,
 }
 
-#[derive(Debug)]
-pub(crate) enum BandStatStatus {
-    NotLoaded,
-    Loading,
-    Loaded(RasterBandStats),
-    Failed(String),
-}
-
 impl RasterBandStats {
+    pub(crate) fn from_rasterband(
+        raster_band: &RasterBand,
+        buckets: usize,
+    ) -> gdal::errors::Result<Self> {
+        let stats = raster_band
+            .get_statistics(true, true)?
+            .ok_or_else(|| GdalError::BadArgument("unable to compute raster statistics".into()))?;
+
+        let histogram = raster_band.histogram(stats.min, stats.max, buckets, false, true)?;
+
+        Ok(Self {
+            min: stats.min,
+            max: stats.max,
+            _mean: stats.mean,
+            _std: stats.std_dev,
+            counts: histogram.counts().to_vec(),
+        })
+    }
+
     pub(crate) fn _minmax(&self) -> (f64, f64) {
         (self.min, self.max)
     }
 
     pub(crate) fn _percentile(&self, percentile: f64) -> Option<f64> {
         value_at_percentile(&self.counts, self.min, self.max, percentile)
-    }
-
-    pub(crate) fn _from_rasterband(raster_band: &RasterBand, buckets: usize) -> Result<Self> {
-        let stats = raster_band.get_statistics(true, true)?;
-
-        let stats = stats.ok_or_else(|| {
-            GdalError::BadArgument("unable to compute raster statistics (min/max/mean/std)".into())
-        })?;
-
-        let min = stats.min;
-        let max = stats.max;
-        let mean = stats.mean;
-        let std = stats.std_dev;
-
-        let histogram = raster_band.histogram(min, max, buckets, false, true)?;
-        let counts: Vec<u64> = histogram.counts().to_vec();
-
-        Ok(Self {
-            min,
-            max,
-            _mean: mean,
-            _std: std,
-            counts,
-        })
     }
 }
 

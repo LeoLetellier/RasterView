@@ -23,7 +23,7 @@ pub(crate) struct ColorInterpretation {
     pub(crate) ranging_values: (OrderedFloat<f32>, OrderedFloat<f32>),
     pub(crate) colormap: ColorMap,
     pub(crate) invert_cmap: bool,
-    pub(crate) db_mode: DbMode,
+    pub(crate) db_mode: bool,
     pub(crate) percentile_clip: OrderedFloat<f32>,
     pub(crate) cyclic_wrap: CyclicWrap,
 }
@@ -34,7 +34,7 @@ impl Default for ColorInterpretation {
             ranging_values: (OrderedFloat(0.0), OrderedFloat(1.0)),
             colormap: ColorMap::default(),
             invert_cmap: false,
-            db_mode: DbMode::default(),
+            db_mode: false,
             percentile_clip: OrderedFloat(2.0),
             cyclic_wrap: CyclicWrap::default(),
         }
@@ -230,7 +230,7 @@ impl ColorMap {
         &self,
         data: &[f32],
         vminmax: (f32, f32),
-        db_mode: DbMode,
+        db_mode: bool,
         wrap: CyclicWrap,
         invert: bool,
     ) -> Vec<u8> {
@@ -243,7 +243,8 @@ impl ColorMap {
         let cyclic = wrap_bounds.is_some();
         let (mut vmin, mut vmax) = match wrap_bounds {
             Some(b) => b,
-            None => (db_mode.convert(vminmax.0), db_mode.convert(vminmax.1)),
+            None if db_mode => (convert_db(vminmax.0), convert_db(vminmax.1)),
+            None => ((vminmax.0), (vminmax.1)),
         };
 
         // Invalid limits (NaN, or <= 0 in dB mode): render as "no data".
@@ -274,7 +275,7 @@ impl ColorMap {
         data.par_iter()
             .zip(out.par_chunks_mut(4))
             .for_each(|(&raw, px)| {
-                let v = db_mode.convert(raw);
+                let v = if db_mode { convert_db(raw) } else { raw };
                 let rgba = if v.is_nan() || (cyclic && !v.is_finite()) {
                     self.nan
                 } else if cyclic {
@@ -296,42 +297,8 @@ impl ColorMap {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub(crate) enum DbMode {
-    /// Use linear values
-    #[default]
-    None,
-    /// power/intensity ratio: 10 * log10(v)
-    ///
-    /// e.g intensity of backscatter signal
-    Intensity,
-    /// amplitude/voltage ratio: 20 * log10(v)
-    ///
-    /// e.g amplitude of backscatter signal
-    Amplitude,
-}
-
-impl DbMode {
-    #[inline]
-    fn convert(self, v: f32) -> f32 {
-        match self {
-            DbMode::None => v,
-            DbMode::Intensity => {
-                if v > 0.0 {
-                    10.0 * v.log10()
-                } else {
-                    f32::NAN
-                }
-            }
-            DbMode::Amplitude => {
-                if v > 0.0 {
-                    20.0 * v.log10()
-                } else {
-                    f32::NAN
-                }
-            }
-        }
-    }
+pub(crate) fn convert_db(v: f32) -> f32 {
+    if v > 0.0 { 10.0 * v.log10() } else { f32::NAN }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -366,7 +333,7 @@ mod tests {
 
     // ---------- helpers ----------
 
-    const LIN: DbMode = DbMode::None;
+    const LIN: bool = false;
     const NOWRAP: CyclicWrap = CyclicWrap::None;
 
     const BELOW: [u8; 4] = [1, 1, 1, 255];
@@ -449,7 +416,7 @@ mod tests {
 
     #[test]
     fn invalid_db_limits_give_nan_color() {
-        let o = cmap().apply(&[1.0], (0.0, 1.0), DbMode::Intensity, NOWRAP, false);
+        let o = cmap().apply(&[1.0], (0.0, 1.0), true, NOWRAP, false);
         assert_eq!(px(&o, 0), NAN);
     }
 
@@ -584,49 +551,27 @@ mod tests {
     fn db_intensity_mapping() {
         // limits (1, 100) -> 0 dB .. 20 dB
         let data = [0.1, 1.0, 10.0, 100.0, 1000.0, 0.0, -1.0];
-        let o = cmap().apply(&data, (1.0, 100.0), DbMode::Intensity, NOWRAP, false);
+        let o = cmap().apply(&data, (1.0, 100.0), true, NOWRAP, false);
         assert_eq!(pixels(&o), vec![BELOW, G0, G1, G2, ABOVE, NAN, NAN]);
     }
 
     #[test]
-    fn db_amplitude_mapping() {
-        // limits (1, 10) -> 0 dB .. 20 dB; sqrt(10) -> 10 dB (midpoint)
-        let data = [0.5, 1.0, 3.162_277_7, 10.0, 20.0];
-        let o = cmap().apply(&data, (1.0, 10.0), DbMode::Amplitude, NOWRAP, false);
-        assert_eq!(pixels(&o), vec![BELOW, G0, G1, G2, ABOVE]);
-    }
-
-    #[test]
     fn db_inverted_swaps_below_above() {
-        let o = cmap().apply(
-            &[0.1, 1000.0],
-            (1.0, 100.0),
-            DbMode::Intensity,
-            NOWRAP,
-            true,
-        );
+        let o = cmap().apply(&[0.1, 1000.0], (1.0, 100.0), true, NOWRAP, true);
         assert_eq!(pixels(&o), vec![ABOVE, BELOW]);
     }
 
     #[test]
     fn db_nonpositive_limits_give_all_nan() {
         for lim in [(0.0, 1.0), (-1.0, 1.0), (1.0, 0.0), (0.0, 0.0)] {
-            for mode in [DbMode::Intensity, DbMode::Amplitude] {
-                let o = cmap().apply(&[0.5, 1.0], lim, mode, NOWRAP, false);
-                assert_eq!(pixels(&o), vec![NAN; 2], "limits {lim:?}, {mode:?}");
-            }
+            let o = cmap().apply(&[0.5, 1.0], lim, true, NOWRAP, false);
+            assert_eq!(pixels(&o), vec![NAN; 2], "limits {lim:?}");
         }
     }
 
     #[test]
     fn db_convert_values() {
-        assert!(approx(DbMode::None.convert(3.0), 3.0));
-        assert!(approx(DbMode::Intensity.convert(100.0), 20.0));
-        assert!(approx(DbMode::Amplitude.convert(100.0), 40.0));
-        for m in [DbMode::Intensity, DbMode::Amplitude] {
-            assert!(m.convert(0.0).is_nan());
-            assert!(m.convert(-1.0).is_nan());
-        }
+        assert!(approx(convert_db(100.0), 20.0));
     }
 
     // ---------- apply: cyclic wrap ----------
@@ -861,7 +806,7 @@ mod tests {
             CyclicWrap::Degree,
             custom(0.0, 1.0),
         ];
-        let dbs = [LIN, DbMode::Intensity, DbMode::Amplitude];
+        let dbs = [false, true];
         for name in ColorMap::names() {
             let cm = ColorMap::from_name(name).unwrap();
             for wrap in wraps {
@@ -958,7 +903,7 @@ mod tests {
         let ci = ColorInterpretation::default();
         assert_eq!(ci.ranging_values(), (0.0, 1.0));
         assert!(!ci.invert_cmap);
-        assert_eq!(ci.db_mode, DbMode::None);
+        assert_eq!(ci.db_mode, false);
         assert_eq!(ci.percentile_clip, OrderedFloat(2.0));
         assert_eq!(ci.cyclic_wrap, CyclicWrap::None);
         assert_eq!(ci.colormap, ColorMap::default());
@@ -970,7 +915,7 @@ mod tests {
         let ci = ColorInterpretation::new(ColorMap::from_name(name).unwrap());
         assert_eq!(ci.colormap.name(), name);
         assert_eq!(ci.ranging_values(), (0.0, 1.0));
-        assert_eq!(ci.db_mode, DbMode::None);
+        assert_eq!(ci.db_mode, false);
     }
 
     #[test]
@@ -1000,7 +945,7 @@ mod tests {
                 ..Default::default()
             },
             ColorInterpretation {
-                db_mode: DbMode::Intensity,
+                db_mode: true,
                 ..Default::default()
             },
             ColorInterpretation {

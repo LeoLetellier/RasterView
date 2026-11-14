@@ -43,6 +43,7 @@ struct SeriesSelection {
     ref_half: usize,
     pick: PickTarget,
     live: bool,
+    show_markers: bool,
 }
 
 fn selection_id() -> Id {
@@ -109,6 +110,9 @@ pub(crate) fn draw_series_markers(
     let Some(sel) = ctx.data(|d| d.get_temp::<SeriesSelection>(selection_id())) else {
         return;
     };
+    if !sel.show_markers {
+        return;
+    }
     let draw = |center: (usize, usize), half: usize, color: Color32| {
         let (cx, cy) = (center.0 as f32, center.1 as f32);
         let h = half as f32;
@@ -202,6 +206,7 @@ pub(crate) fn ui_point_series(ui: &mut Ui, viewer: &mut Viewer, rh: &mut RasterH
             ref_half: 0,
             pick: PickTarget::None,
             live: false,
+            show_markers: true,
         }
     });
     let mut job: Option<SeriesJob> = ui.data_mut(|d| d.get_temp(job_id));
@@ -250,6 +255,8 @@ pub(crate) fn ui_point_series(ui: &mut Ui, viewer: &mut Viewer, rh: &mut RasterH
         .on_hover_text("Half window size in pixels (median over the window)");
         ui.toggle_value(&mut sel.live, "Live")
             .on_hover_text("Point follows the mouse over the image. Click to freeze, Esc to stop.");
+        ui.checkbox(&mut sel.show_markers, "Overlay")
+            .on_hover_text("Show the point / reference windows on the image");
         status_spinner(ui, running);
     });
 
@@ -335,7 +342,6 @@ pub(crate) fn ui_point_series(ui: &mut Ui, viewer: &mut Viewer, rh: &mut RasterH
                     (b as f64, Color32::from_rgb(90, 140, 230)),
                 ]
             }
-            ActiveViewer::Index => vec![],
         };
 
         let resp = Plot::new(job_id.with("plot"))
@@ -363,7 +369,6 @@ pub(crate) fn ui_point_series(ui: &mut Ui, viewer: &mut Viewer, rh: &mut RasterH
                         let target = target.min(last.saturating_sub(span)).max(FIRST);
                         shift_rgb(viewer, target as isize - lo as isize, last);
                     }
-                    ActiveViewer::Index => {}
                 }
                 if old_view != viewer.view_mode {
                     viewer.update_view(rh);

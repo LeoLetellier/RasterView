@@ -1,5 +1,7 @@
 use cmap::ColorInterpretation;
 use egui_plot::{PlotBounds, PlotPoint};
+use ordered_float::OrderedFloat;
+use tasking::ViewStyle;
 
 pub(crate) mod cmap;
 pub(crate) mod coords;
@@ -75,6 +77,9 @@ pub(crate) struct ViewerState {
     pub(crate) last_bounds: Option<PlotBounds>,
     pub(crate) last_screen_size: Option<(f64, f64)>,
     pub(crate) background_loading: BgLoading,
+    /// Last resolved render task (ranges included). When the freshly resolved
+    /// task differs from this one, the tile cache must be refreshed.
+    pub(crate) last_view_task: Option<ViewStyle>,
 }
 
 #[derive(Debug, Default)]
@@ -106,6 +111,11 @@ pub(crate) struct ViewMode {
     pub(crate) cpx_mode: CpxMode,
     pub(crate) color_interpretation: ColorInterpretation,
     pub(crate) ranging_mode: ColorRanging,
+    /// User-entered range. Only used when `ranging_mode == Manual`.
+    ///
+    /// `color_interpretation.ranging_values` is NOT user state anymore: it is
+    /// only filled with the resolved range when building a render task.
+    pub(crate) manual_range: (OrderedFloat<f32>, OrderedFloat<f32>),
     pub(crate) approx_stats: bool,
 }
 
@@ -118,6 +128,7 @@ impl Default for ViewMode {
             cpx_mode: CpxMode::WrappedPhase,
             color_interpretation: ColorInterpretation::default(),
             ranging_mode: ColorRanging::MinMax,
+            manual_range: (OrderedFloat(0.0), OrderedFloat(1.0)),
             approx_stats: true,
         }
     }
@@ -134,5 +145,4 @@ pub(crate) enum ColorRanging {
 pub(crate) enum ActiveViewer {
     Band,
     Color,
-    Index,
 }

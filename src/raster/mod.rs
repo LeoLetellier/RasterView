@@ -7,7 +7,6 @@ use anyhow::Result;
 use eframe::egui;
 use gdal::{Dataset, Metadata, raster::RasterBand};
 use std::collections::HashSet;
-use std::sync::{Arc, Mutex};
 use std::{ops::Deref, path::Path};
 
 pub(crate) mod loading;
@@ -27,7 +26,7 @@ pub(crate) struct RasterHandler {
     texture_cache: tiles::TextureCache,
     on_screen_texture_retainer: HashSet<tiles::Tile>,
     pending_tiles: HashSet<tiles::TileDescriptor>,
-    pub(crate) bands_stats: Arc<Mutex<Vec<BandStatStatus>>>,
+    pub(crate) bands_stats: Vec<BandStatStatus>,
 }
 
 impl Deref for RasterHandler {
@@ -79,13 +78,11 @@ impl RasterHandler {
             tiles::TileWeighter,
         );
 
-        let bands_stats = Arc::new(Mutex::new(
-            gdal_dataset
-                .rasterbands()
-                .enumerate()
-                .map(|_| BandStatStatus::NotLoaded)
-                .collect(),
-        ));
+        let bands_stats = gdal_dataset
+            .rasterbands()
+            .enumerate()
+            .map(|_| BandStatStatus::NotLoaded)
+            .collect();
 
         let path = path.as_ref();
 
